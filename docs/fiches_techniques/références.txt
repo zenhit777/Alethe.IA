@@ -1,0 +1,30 @@
+
+## MOTEURS D'INFERENCES :
+
+# Strata
+https://stratallm.org/
+https://github.com/niko1221/strata
+
+# FreeToken
+https://www.flashml.ai/
+https://github.com/FlashML-org/FreeToken
+https://arxiv.org/abs/2608.16157
+
+# DwarfStar4
+https://github.com/antirez/ds4
+
+
+
+## ARXIV
+
+# WeDLM
+https://arxiv.org/html/2512.22737v1
+
+# FLARE
+https://arxiv.org/html/2606.01774v2
+
+# FLUID
+https://arxiv.org/html/2605.27387v1
+
+# Repr-Align
+https://arxiv.org/html/2605.06885v1
