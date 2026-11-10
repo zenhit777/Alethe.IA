@@ -29,4 +29,61 @@ https://arxiv.org/html/2605.27387v1
 # Repr-Align
 https://arxiv.org/html/2605.06885v1
 
-- LLaDA 8B Instruct (dLLM de départ, checkpoint réduit de P0 / P1a) : https://arxiv.org/abs/2502.09992 — https://github.com/ML-GSAI/LLaDA — https://huggingface.co/GSAI-ML/LLaDA-8B-Instruct
+- LLaDA 8B Instruct (contre-épreuve de profil, validation du format GGUF Q8_0 et de la session CPU-only ; ne déclare pas la taille de bloc, contexte 4096, pas de GQA, pas de GDN) : https://arxiv.org/abs/2502.09992 - https://github.com/ML-GSAI/LLaDA - https://huggingface.co/GSAI-ML/LLaDA-8B-Instruct
+- LLaDA 8B Base : **8 015 581 184 parametres BF16** lus a l'API le 10 novembre 2026 (`safetensors.parameters` sur `GSAI-ML/LLaDA-8B-Base`) ; la valeur 8 022 581 248 circulee plus tot est **fausse**, NEVER la reproduire
+
+## CHECKPOINTS DE REFERENCE (lu a la source, 10 novembre 2026)
+
+# dQwen3.5-0.8B-Base (checkpoint de reference de P0 / P1a, Apache-2.0, DiffuQwen35, 18 GDN + 6 full attention, 752 393 024 parametres BF16 = 1 504 822 808 octets, contexte 262 144, masque <|fim_middle|> = id 248061, revisions main/step25000-swa/step50000-swa)
+https://huggingface.co/UT-IFML/dQwen3.5-0.8B-Base
+https://arxiv.org/abs/2609.20751
+https://github.com/AntonXue/dQwen
+
+# dQwen3.5-2B-Base (reference complementaire, PolyForm Noncommercial 1.0.0, 1 881 825 088 parametres BF16 = 3 763 687 248 octets, modes AR-Trust / Diffusion-Trust / causal declares, masque id 248061)
+https://huggingface.co/UT-IFML/dQwen3.5-2B-Base
+
+# HybridDiffusion-2B / FLARE-2B (checkpoint hybride GDN, 2,39 B, base Qwen3.5-2B, modes AR-Trust N=4 / Diffusion-Trust, block_size 3, seuil 0.95, licence PolyForm Noncommercial 1.0.0)
+https://huggingface.co/yuchen-zhu-zyc/HybridDiffusion-2B
+https://github.com/yuchen-zhu-zyc/HybridDiffusion
+https://arxiv.org/abs/2606.01774
+
+# Controle iso-famille (meme methode d'adaptation, backbone uniquement dense : 28 couches full attention, 0 GDN, 1 720 574 976 parametres BF16 = 3 441 149 952 octets, contexte 40960, sha f7a02dcf8fac5f86b2fe3fcbcc990b74acaee36f)
+https://huggingface.co/UT-IFML/dQwen3-1.7B-Base
+
+# DiffusionGemma 26B A4B it (cible de reference dLLM, P1b) — id **verifie a l'API le 10 nov. 2026** (l'API repond `Invalid username or password` sur `google/diffusion-gemma-26b`), sha `f7f5b7f5fa82ffc52addd066915886d497f5517b`, Apache-2.0, **25 823 781 228 parametres BF16 = 51 647 701 024 octets en 11 shards**, canvas_length 256, sliding_window 1024, 30 couches, 128 experts / top_k 8, masque `<mask>`, boi 255999, eoi 258882, pipeline `image-text-to-text` (vision_config 27 couches, `gemma4_vision`, image_token_id 258880, vision_soft_tokens_per_image 280)
+https://huggingface.co/google/diffusiongemma-26B-A4B-it
+
+# Clover-35B-A3B-Preview (cible de reference dLLM, P3 ; sha `4b0402b65e523d0183a14c431955438714cb16ff` **verifie a l'API le 10 nov. 2026**, confirme le 4b0402b65e cite par la carte) — Apache-2.0, base `Qwen/Qwen3.6-35B-A3B`, **34 661 350 848 parametres BF16** ; **28 fichiers `.safetensors` totalisant 69 322 795 672 octets** (26 shards + `bd_gdn_conv_right_weight.safetensors` 1 478 024 + `bd_gdn_softmax_scalars.safetensors` 15 584) ; `usedStorage` HF **69 342 784 805 octets** ; HF : 4 700 telechargements, 264 likes — 40 couches, 256 experts / top-8 + 1 partage, block_size 32, mask_token_id 151669 (`<|mask|>`), GQA 2 KV, contexte 131 072, `moe_block_coreset_enabled` (top_p 0.9), pipeline `text-generation`
+https://huggingface.co/Diffuspace/Clover-35B-A3B-Preview — carte **lue par API le 10 nov. 2026** (`200`)
+https://huggingface.co/Diffuspace/Clover-35B-A3B-Preview-GGUF — corpus de quantization GGUF **lu par API le 10 nov. 2026** (`200`) : 66 929 telechargements, 43 likes, **3 fichiers `.gguf`** dont `Clover-35B-A3B-Preview-Q8_0.gguf` ; **aucun fichier `IQ4_XS` dans la liste** — NEVER supposer une couverture i-quant pour ce corpus.
+https://github.com/DiffuSpace/Clover-35B-A3B-Preview — **LU le 10 nov. 2026** : nom canonical **`DiffuSpace`** confirmé par `api.github.com` (154 stars, branche `main`) ; tarball `codeload` `200` **5 670 277 octets** ; `README.md` **109 lignes / 5 409 octets** ; `sft/README.md` **7 lignes / 158 octets**. Le dépôt **ne contient pas de code d'inférence** (« Backend code and setup guides **will be added** », SFT « **Coming soon** »). NEVER le citer comme moteur de référence : l'implémentation est SGLang PR 46927 (open) / llama.cpp PR 31306 (fusionnée le 2026-11-02T17:37:28Z).
+
+# WeDLM 2.0 (blocs de 64, seuil 0.9)
+https://arxiv.org/abs/2609.18795
+
+# Gated DeltaNet (base de l'etat recurrent)
+https://arxiv.org/abs/2412.06464
+https://github.com/NVlabs/GatedDeltaNet
+
+# Auto-speculation par ancrage des positions de confiance
+https://arxiv.org/abs/2508.19982
+
+# Quantization GGUF exercee (commit a epingler)
+https://huggingface.co/diffuse-cpp/LLaDA-8B-Instruct-GGUF
+
+# API externes lues a la source (annexe B)
+https://platform.openai.com/docs/api-reference/chat
+https://platform.claude.com/docs/en/api/messages
+
+## Statut de verification (10 novembre 2026)
+
+- **Verifiees par lecture directe de l'API** (`huggingface.co/api/models/...` repond `200`, `id`, `sha`, champs `safetensors` / `cardData.license` / `base_model` lus) : `UT-IFML/dQwen3.5-0.8B-Base`, `UT-IFML/dQwen3.5-2B-Base`, `GSAI-ML/LLaDA-8B-Instruct`, `diffuse-cpp/LLaDA-8B-Instruct-GGUF`, `Diffuspace/Clover-35B-A3B-Preview`, `google/diffusiongemma-26B-A4B-it`, `yuchen-zhu-zyc/HybridDiffusion-2B`, `Qwen/Qwen3.5-0.8B-Base`, `Qwen/Qwen3.6-35B-A3B`. MUST consigner le `sha` de la revision exercee dans chaque rapport (§13.1 de `_Alethe.IA.md`).
+- **Verifiees par lecture de fichier** : `config.json`, `tokenizer_config.json`, `tokenizer.json` (`added_tokens`) de `UT-IFML/dQwen3.5-0.8B-Base` et `UT-IFML/dQwen3.5-2B-Base` ; `config.json` + `configuration_llada.py` de `GSAI-ML/LLaDA-8B-Instruct` ; spec ggml `docs/gguf.md` (structure de Q8_0).
+- **Corrigees** : `Vals-ai/HybridDiffusion-2B` est un **identifiant inexistant** (l'API repond `Invalid username or password`) → `yuchen-zhu-zyc/HybridDiffusion-2B` ; `Qwen2.5-1.5B` comme base de HybridDiffusion est faux → `Qwen/Qwen3.5-2B` ; masque `248068` est faux (`<think>`) → `<|fim_middle|>` = `248061` ; les comptages `328 526 848` / `164 263 424` (0.8B) et `2 390 384 448` / `4 780 810 864` (2B) sont faux.
+- **Re-verifiees ce jour (10 novembre 2026)** : le reseau est **accessible** — `curl` repond `200` sur `github.com`, `raw.githubusercontent.com`, `codeload.github.com`, `api.github.com`, `arxiv.org` (mesure : `https://github.com/Niko1221/Strata` → `200`, `https://raw.githubusercontent.com/niko1221/strata/main/README.md` → `200`). **Les references listees ci-dessus sont relues ce jour.** Les mesures du 25 octobre 2026 (`curl` → `000`) sont **remplacees** ; NEVER citer `000` comme etat actuel. MUST relire a la source avant toute modification normative qui s'y appuie (regle 1 de §0).
+- MUST NOT inventer un identifiant, un sha, un compte, un article, un nom de depot. MUST NOT presenter un fait non lu comme consigne.
+- **Lues par tarball le 10 novembre 2026** (`curl codeload.github.com/<depot>/tar.gz/refs/heads/main` → `200`, taille mesuree) : `Niko1221/Strata` **35 148 702 octets** ; `FlashML-org/FreeToken` **3 158 952 octets** ; `antirez/ds4` **16 400 610 octets** ; `ro99/strata` (homonyme, lu pour prouver la distinction) ; `DiffuSpace/Clover-35B-A3B-Preview` **5 670 277 octets**.
+- **Versions lues dans les fichiers des depots** : Strata **0.2.13** (`apps/host/package.json:4`) ; FreeToken **0.2.2** (`python/freetoken/version.py:1`) ; ds4 **aucune chaine de version de release trouvee** (`ds4.h:645 DS4_SESSION_PAYLOAD_VERSION = 2`, `:648 DS4_SESSION_PAYLOAD_VERSION…LAYER = 1`).
+- **Identificateurs corriges a la lecture** : `PeerExperts` = `include/strata/core/peer_experts.hpp:36` (la fiche disait `:29`) ; `RemoteExpertOpt` = `include/strata/core/remote_expert_opt.hpp:14` (la fiche disait `expert_source.hpp:855`) ; `ExpertCache` = `include/strata/core/expert_cache.hpp:86` (la fiche disait `:45`) ; **`CacheBudget` n'existe pas dans FreeToken** (`python/freetoken/engine/cache_budget.py` : `net_cache_budget_bytes` `:38`, `plan_cache_budget` `:55`). MUST nommer le depot et l'organisation dans chaque mention de Strata.
+- **Faits du 25 octobre 2026 non retrouves dans la source lue ce jour** : « Strata ne convertit pas les checkpoints » et « Strata ne forme pas de modèles ». NEVER les citer comme faits verifies ce jour. MUST les relire avant de les employer.
+- **Implementations de reference de Clover, lues a l'API GitHub (`api.github.com/repos/.../pulls/N` → `200`)** : **SGLang PR 46927** « [Feat] clover: Add native serving and self-speculative decoding » — **open**, **non fusionnee** ; **llama.cpp PR 31306** « feat: add Clover support » — **fusionnee le 2026-11-02T17:37:28Z**. Le depot `DiffuSpace/Clover-35B-A3B-Preview` **ne contient pas de code d'inférence** (`README.md` : « Backend code and setup guides **will be added** » ; `sft/README.md` : « **Coming soon** »). NEVER presenter le depot comme contenant l'implementation.

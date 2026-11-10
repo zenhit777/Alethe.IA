@@ -621,3 +621,33 @@ La prochaine amélioration ne doit donc pas consister à ajouter encore des exig
 Je recommande de corriger les points P0 avant de lancer un développement substantiel du moteur. Après ces corrections, je pense que le document pourrait atteindre un niveau de référence de l'ordre de 8,5/10, suffisamment solide pour guider un agent IA de développement sur des jalons bien délimités.
 
 Mon appréciation finale : la nouvelle spécification est un progrès sérieux. L'ambition d'Alethe.ia est mieux protégée qu'auparavant, et je ne recommande pas de refaire le document — seulement de le fiabiliser sur les points encore identifiés.
+
+---
+
+## Vérification du 10 novembre 2026 (corps figé ci-dessus)
+
+Le corps de cet audit n'est **pas** modifié. Cette section consigne l'état des blocants qu'il listait, vérifié le 10 novembre 2026 à la source.
+
+**P0 — bloquants techniques** :
+- **E8M0** : **clos, et précisé au-delà de l'audit**. La sémantique `0x00` = `2^-127`, `0xFF` = NaN réservé est **conservée** ; **et** il est consigné qu'elle appartient **exclusivement aux formats MX** : la structure réelle de **Q8_0** est `(ggml_half d, int8_t qs[32])` = **34 octets / 32 éléments**, facteur d'échelle **`float16`**, **sans exposant E8M0** (spec ggml `docs/gguf.md`, lu le 10 nov. 2026). `ADR-003`.
+- **Noms de fonctionnalités WebGPU** : **clos** — la liste exercée en P0 est nominale (`shader-f16`, `timestamp-query`, `subgroups` + `subgroupMinSize` / `subgroupMaxSize`, `texture-compression-bc` / `etc2` / `astc`, `float32-filterable`), fonctionnalités **exposées et absentes** consignées (§8.1).
+- **Niveaux de maturité** : **clos** — deux axes (maturité de spécification / état d'implémentation) explicites, `Annexe A`.
+- **Références canoniques erronées** : **clos par relecture à la source** le 10 nov. 2026 : les 7 cartes de modèles répondent `200` et les faits (id, `sha`, paramètres, octets, licence, base) sont lus dans l'API et les fichiers ; **cinq identifiants inventés sont retirés** (`Vals-ai/HybridDiffusion-2B`, `Nikolas-Kabbani/Fallen-2.2-26B-A3B-GGUF`, `Fucking-Panda/WAR-STRATA-7B-GGUF`, `NemoHeger/MolmoEdge42-2B-AWQ`, `microsoft/Phi-4-mini-instruct-AWQ-4-16`) ; les comptages de dQwen (0.8B et 2B) et le **token de masque** (`248061` = `<\|fim_middle\|>`) sont corrigés ; `BLOLLM / arxiv:2506.13631` retiré.
+
+**P1 — cohérence du moteur dLLM** :
+- **R-16** (conversion externe déclarée par un `AdaptationFile`, NEVER inventée) : **clos** dans le texte normatif ; la granularité MUST être lue depuis les métadonnées (`R-160`).
+- **Dual-stream sans cible réelle** : **clos sur l'existence d'une cible déclarative** — `yuchen-zhu-zyc/HybridDiffusion-2B` publie **trois modes sur le même jeu de poids** (`AR-Trust` horizon `N = 4` / `Exact-Truncated`, `Diffusion-Trust` `block_size: 3`, causal). **L'adoption comme cible de validation reste A TRANCHER** (zone 24) ; la licence **PolyForm Noncommercial 1.0.0** MUST être tranchée avant usage en production.
+- **Famille de génération vs topologie** : **clos** — trois dimensions indépendantes (`generation_family`, `architecture_topology`, `generation_capabilities`) ; `Hybride` n'est **pas** une valeur de `generation_family` ; `Dense` n'est **pas** une valeur de `architecture_topology`.
+- **Profils d'attention par modèle** : **clos** — consignés par modèle avec les faits lus (dQwen **18 couches `linear_attention` + 6 couches `full_attention`**, LLaDA **32 couches pleines sans GQA**, HybridDiffusion, DiffusionGemma canva 256 / fenêtre glissante 1024).
+- **`p_cache` et n-gram conditionnés** : **clos** — `p_cache` réservé au **seul profil WeDLM** (R-26) et **jamais** critère de complétion en P1a / P1b ; tables n-gram conditionnelles.
+
+**P2 — complétude du produit** :
+- **R-37** (offload conditionné par le coût) : **clos** — l'offload est conditionné par la mesure.
+- **API de contrôle réintroduite** : **clos** — R-92..R-96, explicitement **hors** API OpenAI / Anthropic.
+- **Périmètre WASM** : **ouvert** conformément à la zone 21 (`N-8`, sans échéance immédiate).
+- **Matrice d'API** : **ouverte**, conformément aux zones 6 et 23 (avant P4). Les **endpoints** sont consignés ; **12 lignes restent `A COMPLETER`**, ce qui vaut **refus explicite** de la fonctionnalité (R-82).
+- **Références CPU-only** : **clos sur le périmètre** — la session CPU-only complète est exercée sur le checkpoint de référence (R-90) ; les capacités du backend CPU (précision, largeur de vector, débit) sont **mesurées**, NEVER supposées.
+
+**Zones restant `A TRANCHER` au 10 novembre 2026** (§14) : 1 format canonique (`ADR-011`), 2 ABI (`ADR-009`), 3 modèle de concurrence (`ADR-010`), 6 surface d'API, 8 valeurs `K/B/S/W`, 9 tolérances de logits, 10 réallocation, 11 plancher MoE, 12 prediction routing, 13 admission, 14 format des mesures, 15 versioning de l'ABI et des formats, 16 rétention, 17 chiffrement, 18 interfaces de sécurité, 19 matrice numérique, 20 mode CPU complet, 21 WASM, 24 cible dual-stream, 25 rattachement des mécanismes empruntés, 26 machine de référence (`ADR-006`), 27 versions d'outillage (`ADR-008` / `ADR-009`). NEVER une zone tranchée par un choix d'implémentation non consigné (§0, règle 8).
+
+**Faits nouveaux non prévus par l'audit** : le runtime de référence de la modélisation dQwen exige **GPU CUDA + `transformers >= 5.13` + `flash-linear-attention 0.5.1` + batch 1** — la comparaison de référence **n'est pas** exerçable en CPU-only sur ce chemin ; un **contrôle iso-famille** existe (`UT-IFML/dQwen3-1.7B-Base`, 28 couches toutes `full_attention`, **même méthode d'adaptation**) et MUST être exercé comme contre-épreuve de la contribution GDN.

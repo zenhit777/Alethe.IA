@@ -22,3 +22,22 @@ Valeurs : `NOT_STARTED` → `IN_PROGRESS` → `IMPLEMENTED` → `VALIDATED`.
 | R-97 (cible dual-stream) | FUTURE | NOT_STARTED | — | — |
 
 **Règle de consignation** : l'agent MUST reporter l'état de chaque exigence touchée dans le rapport de jalon ; MUST lier chaque `IMPLEMENTED` / `VALIDATED` à un artefact (chemin du rapport de mesure, nom de la machine de référence, revision du checkpoint exercé). NEVER déclarer un état sans l'artefact.
+
+## Prérequis d'entrée de P0 (état `NOT_STARTED`, non tranchés à ce jour)
+
+MUST être **consignés avant** P0 (règle 21 de §11) ; NEVER une exécution de P0 sur un prérequis non consigné.
+
+| Prérequis | Source normative | État | Ce qui bloque |
+|---|---|---|---|
+| Machine de référence désignée | §9, zone 26, `ADR-006` | **non tranché** | seuil de débit non consigné, mesures non transportables |
+| Version de `wgpu` + limites **lues** du device | §4.5, zone 27, `ADR-008` | **non consignée** | aucune limite, aucune fonctionnalité exposée consignée |
+| Versions de Rust / Zig + commits + ABI partagée | §4.7, zones 2 et 27, `ADR-009` | **non consignées** | décalage d'ABI détectable uniquement par la sortie |
+| Modèle de concurrence + liste des points de bloquage | zone 3, `ADR-010` | **non tranché** | propriété des tampons non déclarée |
+| Convention de format canonique (clé de topologie explicite) | zone 1, `ADR-011` | **non tranché** | topologie non lisible, R-106 non exercé |
+| Tolérances chiffrées par format (BF16, FP16, FP32, Q8_0) | §6.3, zones 9 et 19, `ADR-002`, `ADR-003` | **non chiffrées** | P0 sans seuil de comparaison numérique |
+| Contrat de découpage (tiling) écrit par kernel | §4.5, R-86, `ADR-004` | **non écrit** | bornes, restes, accumulation non contractés |
+| Ordre d'accumulation consigné par kernel (réduction) | §4.5, R-28, `ADR-007` | **non consigné** | reproductibilité de la réduction non assurable |
+| Empreinte mémoire mesurée et comparée à la réservation d'admission | §8.1, R-32, R-38 | **non mesurée** | admissibilité non décidable, OOM possible |
+| Checkpoint de référence épinglé | zone 22, `ADR-001` | **consigné** : `UT-IFML/dQwen3.5-0.8B-Base` — `main` = `1b6ae9426071d5e372d58e309bd4ed85de39c762` (défaut), `step25000-swa` = `006d0b07fba4fffba7af33bfa875697d545a7a2f`, `step50000-swa` = `9a69f0e2a8ef14b7793c43c80c3b8ca899b58acf` (lus le 10 nov. 2026) | la revision **exercée** MUST être consignée dans chaque rapport ; NEVER une validation consignée sans la revision |
+
+MUST NOT déclarer P0 clos sans les prérequis ci-dessus, NEVER une exception. MUST NOT coder une zone non tranchée (§0 règle 8).
