@@ -17,12 +17,12 @@ Deux faits de précision, consignés :
 | Option | Couverture de P0 | Coût | Verdict |
 |---|---|---|---|
 | Q8_0 seul | format de la quantization, pas le format de publication | faible | rejeté : ne couvre pas la cible |
-| **BF16 + FP16 + FP32 + Q8_0 en P0** | format de publication + référence de précision + format quantisé | un jeu de vecteurs de référence par format | **retenu** |
+| **BF16 (format de poids de référence) + FP32 (oracle de comparaison) + Q8_0 (corpus GGUF LLaDA) en P0** | format de publication + référence de précision + format quantisé | un jeu de vecteurs de référence par format exercé | **retenu** |
 | BF16 en P5 | P0 valide un format absent de la cible | report du risque numérique | rejeté |
 
 ## Décision
 
-**BF16 MUST être exercé en P0 comme format numérique de référence.** MUST valider en P0, chacun avec ses **vecteurs de référence propres** et ses tolérances chiffrées (§6.3) : **BF16**, **FP16**, **FP32**, **GGUF Q8_0**. MUST séparer BF16 de FP16 dans les types, NEVER les confondre sous un même alias.
+**BF16 MUST être exercé en P0 comme format numérique de référence.** MUST valider en P0, chacun avec ses **vecteurs de référence propres** et ses tolérances chiffrées (§6.3) : **BF16** (format de poids de la distribution de référence), **Q8_0** (corpus `diffuse-cpp/LLaDA-8B-Instruct-GGUF`, commit de la quantization épinglé), et MUST utiliser **FP32 comme oracle de comparaison** — **jamais** comme format de poids que le moteur doit servir en production. **FP16 n'est pas une obligation de P0** : c'est un format `F-3` de R-60 ; MUST être exercé à son propre jalon avec sa ligne de tolérance, NEVER exigé en P0 sans justification **mesurée**. MUST séparer BF16 de FP16 dans les types, NEVER les confondre sous un même alias.
 
 MUST calculer BF16 en accumulant en `f32` (R-28) et convertir aux extrémités. MAY utiliser `shader-f16` **si et seulement si** le device l'expose (§4.5), NEVER comme précondition de P0.
 
@@ -33,6 +33,6 @@ MUST mesurer l'empreinte BF16 (§8.1) : c'est l'empreinte de la distribution de 
 ## Conséquences
 
 - §6.3 : une ligne par format exercé, tolérance chiffrée par format, NEVER une tolérance globale.
-- §8.1 : P0 MUST produire un rapport de références numériques **par format** ; NEVER une clôture de P0 sans les quatre formats.
-- LLaDA n'est plus la seule validation de format : il valide Q8_0 et la session CPU-only ; dQwen valide BF16.
+- §8.1 : P0 MUST produire un rapport de références numériques **par format exercé** ; NEVER une clôture de P0 sans BF16, Q8_0 et l'oracle FP32 consigné. FP16 MUST être reporté à son jalon (`F-3`), NEVER présenté comme acquis.
+- LLaDA n'est plus la seule validation de format : il valide Q8_0 et la session CPU-only sur le corpus GGUF ; dQwen valide BF16 et la session CPU-only BF16 — **deux exercices distincts, NEVER fusionnés** (R-90).
 - La sémantique E8M0 (`0x00` = `2^-127`, `0xFF` = NaN réservé) est consignée pour les formats MX, NEVER appliquée à Q8_0 (ADR-003).

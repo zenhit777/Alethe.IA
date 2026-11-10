@@ -28,7 +28,7 @@ Fait constaté sur `UT-IFML/dQwen3.5-2B-Base` : **1 881 825 088 paramètres**, `
 
 Le checkpoint de référence de **P0 / P1a** est **`UT-IFML/dQwen3.5-0.8B-Base`**. MUST être épinglé par commit HF au téléchargement, la revision consignée dans chaque rapport (§13.1, zone 23).
 
-MUST exercer en P0 : **BF16** (format de la distribution de référence) **et** **GGUF Q8_0** (R-60) ; l'empreinte mesurée (§8.1) est la base de toute décision d'admission.
+MUST exercer en P0 : **BF16** (format de la distribution de référence, cible de poids de P0), **GGUF Q8_0** (R-60, corpus LLaDA, commit de la quantization épinglé) et **FP32 comme oracle de comparaison** (jamais comme format de poids à servir en production) ; FP16 (`F-3`) est reporté à son jalon. L'empreinte mesurée (§8.1) est la base de toute décision d'admission.
 
 `GSAI-ML/LLaDA-8B-Instruct` **reste dans la spécification, repositionné** : (1) corpus de validation du format GGUF Q8_0 (`diffuse-cpp/LLaDA-8B-Instruct-GGUF`, `llada-8b-q8_0.gguf`, commit de la quantization à épingler) et de la session CPU-only (R-90) ; (2) **contre-épreuve de profil** : prouve que le moteur refuse, sur un checkpoint dense à contexte 4096, toute attribution de cache KV, de fenêtre glissante, d'attention croisée, de double flux, de table n-gram ou d'état GDN. NEVER le classer comme dLLM adapté : c'est un dLLM natif (R-16). NEVER lui attribuer une granularité supposée : sa taille de bloc est un paramètre de configuration consigné.
 
@@ -39,5 +39,13 @@ MUST exercer en P0 : **BF16** (format de la distribution de référence) **et** 
 - §8, §7.2.1, §13.1, N30, zone 22 : le nom change, les faits consignés sont ceux lus à la source.
 - P1a est exercé sur un chemin **récurrent** (GDN), pas uniquement dense : l'état récurrent est validé en P1a, NEVER reporté à P3.
 - La granularité MUST être lue depuis les métadonnées du checkpoint (R-160), NEVER supposée.
-- La validation CPU-only (R-90) reste exercée sur le corpus LLaDA ; la validation BF16 est exercée sur dQwen.
+- La validation CPU-only (R-90) est **deux exercices distincts** : (a) session complète **BF16 sur dQwen** (chemin récurrent GDN, canva entier), (b) session complète **Q8_0 sur le corpus GGUF LLaDA** (chemin dense, contexte 4096) ; NEVER fusionner les deux, NEVER n'exercer que l'un des deux.
 - L'empreinte BF16 de dQwen-0.8B (**1 504 822 808 octets ≈ 1,40 GiB** de poids) tient dans la machine de développement (`ADR-006`, 32 607 MiB de VRAM) : la contrainte d'admission devient mesurable en P0, NEVER un argument de taille de modèle. MUST mesurer l'empreinte **totale** (§8.1 : poids + tampons + activations + états récurrents + copies), NEVER se limiter aux poids.
+
+## Correction du 10 novembre 2026 — classification de `UT-IFML/dQwen3.5-0.8B-Base`
+
+Une lecture antérieure de la spec 0.2.1 décrivait dQwen3.5-0.8B-Base comme une « **base à convertir** » et écrivait qu'il ne devait **pas** être servi comme dLLM. **C'est faux, contredit par la carte publiée** : « A masked diffusion language model **adapted from** Qwen3.5-0.8B. The backbone is hybrid: only its attention layers are made bidirectional, and the Gated DeltaNet layers stay causal » (`README.md`, lu le 10 novembre 2026), `architectures = ["DiffuQwen35"]`, `model_type = diffuqwen35`. Le checkpoint **est déjà** un dLLM adapté par la méthode **`dQwen35`** (`arxiv:2609.20751`). MUST le charger et l'exécuter **tel quel** ; NEVER exiger de l'opérateur une seconde conversion ; NEVER le classer dans la catégorie « base à convertir » (`Qwen/Qwen3.5-0.8B-Base` est le **modèle source** de l'adaptation, jamais l'artefact exercé de P0 / P1a).
+
+**Conséquences de la correction** : §7.1 catégorie 2 (méthode `dQwen35` ajoutée à la liste), R-16 (un checkpoint adapté est servi tel quel), §7.2.1 (profil requalifié), §8 (rôles de validation), §13.1 ligne « Base de conversion », `docs/CHANGELOG.md`.
+
+**Deuxième fait corrigé** : `block_length = 32` est un **exemple d'option d'appel** de `generate` (la carte : « `generate` decodes the whole canvas at once, committing positions above a confidence threshold (`tau=0.9`) ; pass `block_length=32` for left-to-right block decoding, or `tau=None, steps_per_block=k` for a fixed budget »). **Aucune granularité de conversion n'est déclarée par le checkpoint** ; NEVER figer `B = 32` comme granularité de référence (R-160 corrigé en conséquence).

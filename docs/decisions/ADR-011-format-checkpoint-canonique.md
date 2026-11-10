@@ -11,7 +11,7 @@ R-58 est normative : un checkpoint canonique MUST transporter la topologie **lis
 Trois faits contraignent la convention :
 1. Les distributions de référence sont publiées en **safetensors** (dQwen, Clover, SDAR, LLaDA, DiffusionGemma), BF16 pour dQwen et Clover.
 2. Les formats quantisés sont publiés en **GGUF** (LLaDA, FUGU, LFM2, LightOn, SFW), avec des structures **spécifiques par format** (Q8_0 = `float16` d + `int8` qs, 34 octets pour 32 éléments — ADR-003).
-3. Les métadonnées canoniques MUST être **lues avant** la lecture des poids (R-106 : une topologie non déclarée est refusée, NEVER devinée). NEVER une topologie reconstruite depuis des noms de tensors.
+3. Les métadonnées canoniques MUST être **lues avant** la lecture des poids (R-58, R-98, R-101 : une topologie non déclarée est refusée, NEVER devinée ; un checkpoint **reconnu sans adaptateur** est refusé en nommant l'architecture). NEVER une topologie reconstruite depuis des noms de tensors.
 
 ## Options
 
@@ -23,7 +23,7 @@ Trois faits contraignent la convention :
 
 ## Décision proposée
 
-Le format canonique MUST être un conteneur **à clé de topologie explicite** (la granularité de bloc, l'architecture par couche, le token de masque natif, les formats de poids, la politique d'admission, la conversion AR → dLLM appliquée) ; MUST transporter la **licence** et la provenance (dépôt + revision épinglée). MUST être **refusé à l'import** si une clé de topologie est absente, NEVER complétée par inférence (R-106, §7.2, `I-4`).
+Le format canonique MUST être un conteneur **à clé de topologie explicite** (la granularité de bloc, l'architecture par couche, le token de masque natif, les formats de poids, la politique d'admission, la conversion AR → dLLM appliquée) ; MUST transporter la **licence** et la provenance (dépôt + revision épinglée). MUST être **refusé à l'import** si une clé de topologie est absente, NEVER complétée par inférence (R-58, R-98, §7.2, `I-4`).
 
 MUST respecter les structures **réelles** des formats importés (ADR-003 : facteur d'échelle de Q8_0 = `float16`, **pas** `float32`, **pas** d'E8M0). MUST traiter les formats F-1 à F-10 (poids, activations, quantization, format de cache) comme **distincts** ; NEVER appliquer à un format la tolérance d'un autre (§6.3, R-60, R-66). MUST déclarer le format canonique en **versioning** (zone 15, `ADR-005`) ; NEVER un format canonique sans version consignée.
 
@@ -32,5 +32,5 @@ MUST fournir l'import GGUF (F-2, F-5 à F-7, F-9, F-10) et l'import safetensors 
 ## Conséquences
 
 - Zone 1 de §14 : **reste A TRANCHER** jusqu'à la décision du mainteneur ; cette ADR consigne l'obligation d'une clé de topologie explicite.
-- §7.2, R-106 : la clé de topologie est un objet typé, exercé par P0 (clé construite depuis des fixtures, NEVER depuis des poids réels).
+- §7.2, R-58, R-98 : la clé de topologie est un objet typé, exercé par P0 (clé construite depuis des fixtures, NEVER depuis des poids réels) ; le journal de découverte (`ADR-013`) en est l'artefact.
 - §13.1 : chaque format exercé MUST avoir ses vecteurs de référence et ses tolérances chiffrées (ADR-002, ADR-003).
