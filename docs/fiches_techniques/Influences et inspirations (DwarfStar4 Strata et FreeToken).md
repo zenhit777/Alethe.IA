@@ -6,7 +6,7 @@
 
 **Objectif :** Extraire les mécanismes de gestion des ressources, d'exécution, de mémoire, de chargement et de validation susceptibles d'améliorer les performances, la fiabilité et la portabilité de notre moteur.
 
-**Identification des sources** : les références de cette fiche sont **`Niko1221/Strata`** (https://github.com/niko1221/strata), **`BenoitMalo/DwarfStar4`** et **`FlashML-org/FreeToken`**. `ro99/strata` est un **projet homonyme distinct** (moteur C++20/CUDA de placement d'experts) et n'est **pas** une référence d'Alethe.ia. MUST nommer le dépôt et l'organisation dans chaque mention de Strata.
+**Identification des sources** : les références de cette fiche sont **`Niko1221/Strata`** (https://github.com/niko1221/strata), **`antirez/ds4`** (nom d'enregistrement de DwarfStar4) et **`FlashML-org/FreeToken`**. `ro99/strata` est un **projet homonyme distinct** (moteur C++20/CUDA de placement d'experts) et n'est **pas** une référence d'Alethe.ia. MUST nommer le dépôt et l'organisation dans chaque mention de Strata.
 
 ---
 
@@ -156,6 +156,25 @@ Son approche cherche à préserver les caractéristiques déclarées par le mod�
 Un principe particulièrement intéressant est la distinction entre l'ordonnancement du travail et la modification du travail lui-même : un prédicteur peut modifier l'ordre d'exécution, mais ne doit pas modifier silencieusement les calculs requis.
 
 Strata présente également une approche explicite de l'admission des modèles : déterminer si un modèle peut être exécuté dans les conditions demandées, et signaler clairement les situations où l'exécution devient dépendante des transferts depuis le stockage.
+
+**Faits vérifiés dans `Niko1221/Strata` `README.md`** (faits, pas inférence) : moteur de serving **local** exposant une API compatible avec les formats **OpenAI** et **Anthropic** sur l'hôte local ; sert les modèles **à la demande** ; **ne convertit pas** les checkpoints ; **ne forme pas** de modèles ; **stream les poids depuis le stockage** quand un modèle est trop volumineux pour la RAM ; **conserve la quantification d'origine** ; **gère la mémoire comme un système de cache** ; publie la **stratégie d'ordonnancement** choisie selon la taille du modèle, le device, la RAM et la VRAM. Revu le 25 octobre 2026.
+
+**Rattachement des mécanismes** — MUST lier chaque mécanisme repris à des fichiers précis du dépôt source (chemin + fonction) **avant** toute réimplémentation. MUST NOT présenter un mécanisme comme une reproduction de Strata sans ce rattachement ; à défaut, MUST le déclarer **adaptation d'Alethe.ia** ou **hypothèse de recherche**.
+
+| Mécanisme | Source dans `Niko1221/Strata` (chemin à consigner) | Correspondance Alethe.ia | Statut |
+|---|---|---|---|
+| Streaming des poids depuis le stockage quand le modèle ne tient pas en RAM | `README.md` (description du fonctionnement) + fichier d'implémentation **à nommer** | `R-30` : streaming du fichier de poids à la granularité des blocs du format, admission décidée par l'ordonnanceur de ressources | **Source** |
+| Conservation de la quantification d'origine | `README.md` + fichier **à nommer** | `R-59`, `I-8`, `C-7` | **Source** |
+| Mémoire gérée comme un système de cache | `README.md` + fichier **à nommer** | `R-29`, `R-32`, `R-33` : hiérarchie **par rôle** (chaud, tiède, froid, persisté, table, scratch), placement décidé par l'ordonnanceur de ressources, pas par classe d'objet imposée | **Adaptation** |
+| LRU d'experts | MUST être rattaché à un fichier et à une fonction **nommés** dans le dépôt source ; à défaut : **hypothèse de recherche** | `R-41` (pool d'experts), `R-37` (CPU pour experts sélectionnés), `R-39` : la politique est une **spécialisation du profil de stratégie** (`R-91`), pas une politique globale (`R-28`) | **Adaptation** |
+| Budget de transfert explicite | à rattacher | `R-85` (budget par device), `R-88` (transfert d'une page dans les limites du budget), `R-84` | **Adaptation** |
+| Admission des modèles et signalement de la dépendance aux transferts | `README.md` (commandes d'admission) + fichier **à nommer** | `R-34`, `R-84`, `R-94` (état des ressources exposé) | **Source** |
+| Publication de la stratégie d'ordonnancement | `README.md` | `R-95` (configuration effective), `R-18`, `R-91` (profils typés par topologie) | **Adaptation** |
+| Compatibilité API sur l'hôte local | `README.md` | `R-48..R-51`, `R-80..R-82`, `R-96` (API de contrôle sur `127.0.0.1`) | **Source** |
+| Prédicteur qui modifie l'ordre sans modifier les calculs | à rattacher | `R-22` : la prédiction de routage ne modifie jamais la sélection d'experts | **Adaptation** |
+| Placement multinode | à confirmer dans le dépôt source | Alethe.ia est **mono-device** (`N-9`) : MUST NOT l'implémenter sans décision écrite | **Hypothèse de recherche** |
+
+**Position d'Alethe.ia sur les fichiers de Strata** : la fiche est une **source d'inspiration**. MUST lire les fichiers cités dans le dépôt source avant toute réimplémentation ; NEVER citer la fiche comme preuve de fonctionnement.
 
 ## 3.2. Inspirations à intégrer
 
