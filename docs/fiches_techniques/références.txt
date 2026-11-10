@@ -28,3 +28,5 @@ https://arxiv.org/html/2605.27387v1
 
 # Repr-Align
 https://arxiv.org/html/2605.06885v1
+
+- LLaDA 8B Instruct (dLLM de départ, checkpoint réduit de P0 / P1a) : https://arxiv.org/abs/2502.09992 — https://github.com/ML-GSAI/LLaDA — https://huggingface.co/GSAI-ML/LLaDA-8B-Instruct
