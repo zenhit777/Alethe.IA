@@ -12,6 +12,8 @@ L'application repose sur un moteur de génération unifié, conçu prioritaireme
 
 L'objectif n'est pas de développer deux moteurs indépendants, mais de représenter les deux paradigmes au moyen d'un même processus général de génération.
 
+**Périmètre exact de l'unification (règle normative)** : le processus partagé est **l'infrastructure d'exécution** — contrats d'opérations, représentation des positions et des blocs, hiérarchie de placement mémoire, deux ordonnanceurs (inférence / ressources), protocole de validation (commit / rewind / rejet), APIs, formats de poids, instrumentation. **Ce n'est pas un algorithme de génération unique.** L'AR est servi par son chemin causal natif (`ValidatorPrefixe`), la diffusion par son chemin de dénoisage (`ValidatorBloc`), la spéculation par `ValidatorSpéculatif` ; NEVER traiter l'AR comme une spécialisation booléenne du dénoisage, NEVER une seconde boucle AR non typée. La conversion AR → dLLM est un **outillage externe** : le moteur charge les checkpoints adaptés, il ne convertit pas et n'entraîne pas.
+
 La différence fondamentale réside dans le traitement des tokens :
 
 - **AR :** les tokens sont prédits séquentiellement, sans étape de débruitage, puis immédiatement validés.

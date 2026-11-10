@@ -9,6 +9,14 @@ Modèles de langage à diffusion (dLLM).
 **Objectif :** 
 Identifier les mécanismes scientifiques et techniques susceptibles de produire des synergies au sein d'un moteur unique, capable de servir des architectures de diffusion natives, hybrides et issues de modèles autorégressifs.
 
+
+**Précautions de lecture (contraintes vérifiées)** :
+- **Précondition commune** : WeDLM, FLARE et REPR-ALIGN présupposent un checkpoint préparé en **dual-stream** (flux `clean` / `noisy`), un modèle de bruit, un prédicteur d'inputs masqués, une fonction de loss et un checkpoint entraîné sur les deux flux. MUST déclarer cette précondition et refuser les checkpoints qui ne la remplissent pas ; NEVER parler de « checkpoint bilingue ».
+- **WeDLM** est le seul nom (jamais « WeDLLM ») ; son adaptateur causal strict suppose décodage causal, préfixe contigu et logits disponibles pour les positions masquées.
+- **Δ du stride (FLUID)** : `stride = 1 + Δ` est cité par l'article sans définition de Δ, de son domaine ni de sa conversion en nombre de positions. MUST l'écrire avec la référence d'équation source avant de l'implémenter ; à défaut, la politique est une **hypothèse de recherche**.
+- **τ (FLUID)** est un seuil de confiance par position ; sa définition exacte et son domaine MUST être cités depuis l'article source.
+- **Nature des reprises** : chaque mécanisme repris est une `Source` (équation, protocole, format), une `Adaptation` (translation aux structures d'Alethe.ia) ou une `Hypothèse de recherche` (politique proposée par Alethe.ia). La matrice de traçabilité est §13.2 de `_Alethe.IA.md`.
+
 ---
 
 # 1\. Vision directrice

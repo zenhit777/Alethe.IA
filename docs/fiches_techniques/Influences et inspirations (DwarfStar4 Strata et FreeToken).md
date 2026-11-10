@@ -6,6 +6,8 @@
 
 **Objectif :** Extraire les mécanismes de gestion des ressources, d'exécution, de mémoire, de chargement et de validation susceptibles d'améliorer les performances, la fiabilité et la portabilité de notre moteur.
 
+**Identification des sources** : les références de cette fiche sont **`Niko1221/Strata`** (https://github.com/niko1221/strata), **`BenoitMalo/DwarfStar4`** et **`FlashML-org/FreeToken`**. `ro99/strata` est un **projet homonyme distinct** (moteur C++20/CUDA de placement d'experts) et n'est **pas** une référence d'Alethe.ia. MUST nommer le dépôt et l'organisation dans chaque mention de Strata.
+
 ---
 
 # 1. Vision directrice
@@ -132,6 +134,8 @@ Les performances du débruitage pourraient être évaluées en fonction de la qu
 # 3. Influence de Strata — Placement intelligent des ressources et fidélité du modèle
 
 **Nature de l'inspiration :** Gestion de la mémoire, placement des poids, exécution MoE et ordonnancement conscient des transferts.
+
+**Source** : `Niko1221/Strata`. Les mécanismes repris (placement multinode, LRU d'experts, budget de transfert) sont des **adaptations** aux structures d'Alethe.ia, pas des reproductions du code de Strata. La mémoire polymorphe d'Alethe.ia classe les objets **par rôle** (chaud, tiède, froid, persisté, table, scratch), pas par classe d'objet imposée, et l'ordonnanceur de ressources décide le placement.
 
 ## 3.1. Mécanismes étudiés
 

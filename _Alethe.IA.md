@@ -4,39 +4,59 @@
 
 **Mots normalisés (RFC 2119)** : MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. `NEVER` = `MUST NOT` ; `AVOID` = `SHOULD NOT`.
 
+**Niveaux de maturité** (définis en §2.4) : `STABLE`, `EXPERIMENTAL`, `RESEARCH`, `FUTURE`. **Chaque exigence porte un niveau.** Un `MUST` accompagné de `RESEARCH` n'est jamais un ordre d'implémentation définitive.
+
+**Traçabilité** : la matrice §13.2 rattache chaque exigence à sa source et à sa **nature** (`Source`, `Adaptation`, `Hypothèse de recherche` — Annexe A). Un article scientifique ne peut pas être cité comme source d'une décision qui est une extrapolation d'Alethe.ia.
+
 ## 0. Usage de ce document
 
 L'agent IA MUST :
 
 1. Lire ce fichier **entièrement** avant toute modification de code.
-2. Respecter les exigences (`R-x`), les invariants (`I-x`) et les règles d'implémentation (`C-x`).
-3. NE PAS inventer de concepts absents de ce document ; AVOID les extensions non décrites.
-4. Signaler les contradictions, ambiguïtés et zones non couvertes **avant** d'écrire le code correspondant.
-5. Traiter chaque livrable comme adossé à une exigence : un changement sans exigence est une dérive.
+2. Respecter les exigences (`R-x`), les invariants (`I-x`), les contraintes (`C-x`) et les non-objectifs (`N-x`).
+3. Vérifier le **niveau de maturité** de chaque exigence avant d'écrire du code : `STABLE` → implémentation ; `EXPERIMENTAL` → implémentation mesurable et désactivable ; `RESEARCH` → prototype + mesure, jamais chemin de production ; `FUTURE` → ne pas implémenter.
+4. NE PAS inventer de concepts absents de ce document ; AVOID les extensions non décrites.
+5. Signaler les contradictions, ambiguïtés et zones non couvertes **avant** d'écrire le code correspondant.
+6. Traiter chaque livrable comme adossé à une exigence : un changement sans exigence est une dérive.
+7. NE PAS trancher seul un arbitrage d'architecture (fusion des ordonnanceurs, choix d'un format de poids prioritaire, périmètre d'une API, ajout d'une dépendance). Ces décisions appartiennent au mainteneur et MUST être consignées dans ce document avant implementation.
 
-Sources consultées pour l'écriture de ce document : les 4 fiches de `docs/fiches_techniques/`, `docs/fiches_techniques/références.txt`, les sources primaires des références (repos Strata, FreeToken, DwarfStar4 ; articles WeDLM, FLARE, FLUID, Repr-Align).
+**Sources consultées pour l'écriture de ce document** : les 4 fiches de `docs/fiches_techniques/`, `docs/fiches_techniques/références.txt`, les sources primaires des références (repos Strata `Niko1221/Strata`, FreeToken, DwarfStar4 ; articles WeDLM, FLARE, FLUID, REPR-ALIGN ; spécifications W3C WebGPU et WGSL ; cartes de modèle DiffusionGemma et Clover).
 
 ---
 
 ## 1. Vision produit
 
-**Alethe.IA** est un moteur d'inférence **natif pour les modèles génératifs à diffusion (dLLM)**, écrit en coopération **Rust + Zig** et accéléré par **WebGPU** de manière portable.
+**Alethe.ia** est un moteur d'inférence **natif pour les modèles génératifs à diffusion (dLLM)**, écrit en coopération **Rust + Zig** et accéléré par **WebGPU** de manière portable.
 
-Le moteur ne se limite pas à la diffusion : il traite la génération autoregressive (AR) comme un **cas dégénéré du modèle unifié de génération par blocs**. Un dLLM est le mode natif ; l'AR est un mode compatible. Les deux coexistent dans un même moteur, un même modèle de mémoire, un même ordonnanceur.
+Le moteur sert **deux familles de génération** — la diffusion par blocs et l'autorégression — **sur une infrastructure commune** (contrats d'opérations, modèle de mémoire, ordonnanceurs, système de validation, API). Il ne partage **pas** un algorithme de génération unique : l'AR conserve son chemin causal natif, la diffusion conserve son chemin de dénoisage natif. Voir §2.5 pour le périmètre exact de l'unification.
 
-**Produit final** : un moteur d'inférence portable, compact, capable de servir des checkpoints dLLM natifs, des checkpoints hybrides AR/dLLM, des checkpoints AR adaptés, sur des GPU grand public et sur des machines sans GPU discret.
+**Produit livré** (par phases) :
 
-**Utilisateurs** : (a) l'agent IA de développement, (b) les intégrateurs d'applications locales (CLI, serveurs API, agents de code), (c) les opérateurs de machines hétérogènes (VRAM limitée, RAM faible, NVMe rapide, WSL, iGPU).
+| Phase | Livrable | Interface utilisateur |
+|---|---|---|
+| P0-P2 | moteur + CLI de validation | technique uniquement |
+| P3-P4 | moteur + serveur OpenAI-compatible et Anthropic-compatible + CLI d'exploitation | opérateurs, intégrateurs, agents |
+| P5 | moteur + APIs + persistance + formats étendus | opérateurs |
+| ultérieure | application avec interface graphique | grand public |
+
+Le **grand public** est une cible d'adoption, pas le périmètre des interfaces livrées aux jalons P0-P5. Un agent ne MUST pas concevoir une interface graphique, un packaging grand public ou une application desktop dans les jalons initiaux (`N-4`).
+
+**Utilisateurs** : (a) l'agent IA de développement, (b) les intégrateurs d'applications locales (CLI, serveurs API, agents de code), (c) les opérateurs de machines hétérogènes (VRAM limitée, RAM faible, NVMe rapide, WSL, iGPU), (d) les agents IA consommateurs des APIs.
 
 **Fonctionnalités primaires** :
-- génération dLLM native (dénoisage par bloc, parallèle) ;
-- génération AR sur le même moteur (mode compatible) ;
-- préfill/decodage en continu, réutilisation de préfixe, reprise de session ;
-- serving OpenAI-compatible (streaming, tool calls) ;
-- persistance d'états d'inférence (checkpoints de KV, sessions) ;
-- gestion polymorphe de la mémoire (KV, états récurrents, états de diffusion) sur VRAM / RAM / NVMe.
 
-**Non-objectifs** (exclusions explicites, `N-x`) : voir §13.
+- génération dLLM native (dénoisage par bloc, parallèle) ;
+- génération AR sur le même moteur, par son chemin natif ;
+- préfill/décodage en continu, réutilisation de préfixe, reprise de session ;
+- serving **OpenAI-compatible** et **Anthropic-compatible** (streaming, tool calls) ;
+- persistance d'états d'inférence (checkpoints de KV, états récurrents, sessions) ;
+- gestion polymorphe de la mémoire (KV, états récurrents, états de diffusion) sur VRAM / RAM / NVMe, **par rôle des objets**, pas par partition matérielle fixe ;
+- exécution sur GPU grand public, iGPU, **et sur machines sans GPU discret (mode CPU-only)** ;
+- exécution d'opérations sur CPU en production dans les sessions servies sur accélérateurs (offload, notamment experts MoE).
+
+**Ce que le moteur ne fait pas** : il n'entraîne pas, n'affine pas, ne convertit pas les checkpoints. La conversion AR → dLLM est un **outillage externe** (§3.11) ; le moteur **charge** les artifacts produits par cet outillage. Voir `N-1`.
+
+**Non-objectifs** (exclusions explicites, `N-x`) : voir §12.
 
 ---
 
@@ -46,15 +66,16 @@ Le moteur ne se limite pas à la diffusion : il traite la génération autoregre
 
 | Couche | Rôle principal |
 |---|---|
-| **Rust** | cohérence d'état, concurrence, ordonnanceur, contrats d'interface, métadonnées canoniques de tenseurs, formats de fichiers, validation, API |
+| **Rust** | cohérence d'état, concurrence, **ordonnanceur d'inférence**, **ordonnanceur de ressources**, contrats d'interface, métadonnées canoniques de tenseurs, formats de fichiers, validation, APIs |
 | **Zig** | représentation mémoire des données, layouts, indexation, structures compactes, chemins critiques, décodage de poids, préparation des buffers |
 | **WebGPU** | accélération portable des calculs, kernels de dLLM, allocation de buffers, files de commandes, plans d'exécution, synchronisation |
+| **CPU** | backend de référence, backend de production (offload d'opérations, mode CPU-only complet) |
 
 **Aucune hiérarchie artificielle** : Rust n'est pas supérieur à Zig, WebGPU n'est pas subordonné aux deux. Chaque couche possède une zone de responsabilité délimitée.
 
 **Règle de non-duplication** : chaque concept (position logique, position physique, bloc, masque, horizon, fenêtre glissante, état récurrent, état de validation, préfixe autorisé, état de session, format de poids) MUST avoir **une seule définition** dans le moteur.
 
-**Règle de séparation stricte** (adaptée de DwarfStar4) : le CLI/server MUST NOT connaître les internals de tenseurs ; l'ordonnanceur MUST NOT connaître les formats de poids.
+**Règle de séparation stricte** (adaptée de DwarfStar4) : le CLI/server MUST NOT connaître les internals de tenseurs ; l'ordonnanceur d'inférence MUST NOT connaître les formats de poids ; l'ordonnanceur de ressources MUST NOT connaître la sémantique de dénoisage.
 
 ### 2.2 Principes d'architecture
 
@@ -66,45 +87,95 @@ Le moteur ne se limite pas à la diffusion : il traite la génération autoregre
 | Préservation de la sémantique | les représentations, formats et interfaces MUST conserver la sémantique des checkpoints |
 | Optimisation mesurée | les optimisations MUST être justifiées par des mesures de mémoire, latence, débit, bandes passantes |
 | Limites explicites | les interfaces MUST définir ce que le moteur fait et ne fait pas |
-| Dégradation contrôlée | les capacités manquantes (device limitations, format unsupported, kernel fallback, cache thrashing, graph incompatibility, VRAM fragmentation) MUST être explicites, jamais silencieuses |
+| Dégradation contrôlée | les capacités manquantes (device limitations, format unsupported, kernel fallback, cache thrashing, VRAM fragmentation, absence de `shader-f16`) MUST être explicites, jamais silencieuses |
+| Déclaratif | les modèles déclarent leurs besoins (états, formats, capacités de décodage) ; les ordonnanceurs décident où les satisfaire |
 
 ### 2.3 Invariants
 
 | # | Invariant |
 |---|---|
-| I-1 | **Un seul modèle de génération** : AR et dLLM sont des configurations du même cycle de blocs. |
-| I-2 | **Un seul ordonnanceur** : le scheduler décide l'horizon, la fenêtre et le rythme de commit pour tous les modes. |
-| I-3 | **Un seul modèle de mémoire** : KV, états récurrents, états de blocs, états intermédiaires sont des entrées d'une même hiérarchie de placement. |
-| I-4 | **Un seul modèle de validation** : la validité d'un jeton, d'un préfixe, d'une couche de poids, d'un plan de kernels est décidée par le même mécanisme de référence. |
+| I-1 | **Infrastructure commune, pas algorithme unique** : AR et dLLM partagent les contrats d'opérations, la mémoire, les ordonnanceurs, le système de validation et les APIs. La sémantique de génération reste propre à chaque famille. |
+| I-2 | **Deux ordonnanceurs coordonnés** : un **ordonnanceur d'inférence** (quoi calculer, dans quel ordre : blocs, pas, sélection, spéculation, admission des requêtes) et un **ordonnanceur de ressources** (où résident les données, quand elles sont déplacées, à quel coût). Ils communiquent par une interface typée, jamais par effets de bord. |
+| I-3 | **Un seul modèle de mémoire** : KV, états récurrents, états de blocs, états intermédiaires, poids, tables n-gram, checkpoints persistés sont des entrées d'une **même hiérarchie de placement**, classées par rôle et coût d'accès, pas par adresse matérielle fixe. |
+| I-4 | **Un seul système de validation** : interface commune (protocole typé commit / rewind / masque / rejet), instances spécialisées par classe de mécanisme (dénoisage, spéculatif, état récurrent, poids). Un AR strict n'est **pas** un cas particulier du validateur de dénoisage. |
 | I-5 | **Sémantique des checkpoints préservée** : formats de poids, structures d'attention, schémas de routage, top-k, nombres d'experts MUST rester fidèles aux checkpoints. |
 | I-6 | **Aucune hiérarchie artificielle entre couches** : la frontière se définit par des contrats, pas par la profondeur d'appel. |
 | I-7 | **Pas de duplication fonctionnelle** : un concept a une définition, un champ, une sémantique. |
 | I-8 | **Pas de lock-in GPU** : les extensions propriétaires MAY être des accélérateurs optionnels, jamais la sémantique principale. |
 | I-9 | **Pas de variantes sémantiques permanentes derrière des flags** (règle DwarfStar4) : les switchs de diagnostic valident le chemin de release. |
 | I-10 | **Correctivité avant rapidité** : NEVER garder un chemin plus rapide avec attention, KV ou logits drift inexpliqués. |
-| I-11 | **Le CPU est un chemin de référence/debug** : NEVER la production sur CPU, sauf sur appareils sans GPU adapté. |
+| I-11 | **Le CPU est un chemin de production** : (a) backend de référence et de debug ; (b) CPU offload d'opérations dans les sessions servies sur accélérateurs, y compris le calcul d'experts MoE ; (c) mode CPU-only complet sur machine sans GPU compatible. Le chemin CPU MUST satisfaire les mêmes exigences numériques, de déterminisme, de persistance, d'API et d'ordonnancement que tout autre backend. |
 | I-12 | **C++ NEVER** dans le codebase. |
+| I-13 | **Un concept, un champ, un flux** : la mémoire d'un état n'est pas un registre ; les états sont typés et sérialisés. |
+| I-14 | **Préconditions déclarées** : tout composant qui suppose une propriété du modèle (causalité stricte, contiguïté du préfixe, checkpoint dual-stream, état récurrent, table n-gram) MUST déclarer cette précondition et refuser les modèles qui ne la remplissent pas. |
+
+### 2.4 Niveaux de maturité
+
+Chaque exigence porte **un seul** niveau :
+
+| Niveau | Signification | Droit de l'agent |
+|---|---|---|
+| `STABLE` | comportement défini et validé sur au moins une cible de référence | implémentation complète, tests de release |
+| `EXPERIMENTAL` | mécanisme défini et implémentable, non validé sur l'ensemble des cibles | implémentation **mesurable et désactivable** ; MUST être mesurée sur les cibles de référence avant d'être activée par défaut |
+| `RESEARCH` | hypothèse à étudier, mécanisme non validé | prototype + protocole de mesure + rapport ; NEVER chemin de production, NEVER défaut activé |
+| `FUTURE` | capacité hors du périmètre des jalons en cours | NEVER implémentée dans les jalons en cours |
+
+Règles :
+
+- Une exigence `RESEARCH` MUST être livrée avec son protocole de mesure et son critère d'abandon.
+- Une exigence `EXPERIMENTAL` MUST être derrière une option de configuration **explicitement documentée**, pas derrière un flag sémantique permanent (`I-9`).
+- Un `MUST` `RESEARCH` se lit comme : « MUST être étudié et mesuré », pas « MUST être livré en production ».
+- La promotion d'une exigence d'un niveau inférieur à `STABLE` MUST être décidée par le mainteneur, sur la base des mesures, et consignée dans la matrice §13.2.
+
+### 2.5 Périmètre de l'unification AR / dLLM
+
+**Ce qui est unifié** (une seule implémentation pour les deux familles) :
+
+- représentation des positions logiques et physiques, masques, blocs, fenêtres ;
+- hiérarchie de placement mémoire et ordonnanceur de ressources ;
+- protocole de validation (commit / rewind / rejet), ses journalisations et ses invariants de cohérence ;
+- cycle de vie des états (session, préfixe, état récurrent, état de diffusion) et leur persistance ;
+- admission des requêtes, concurrency, workers ;
+- APIs, formats de poids, métadonnées canoniques ;
+- instrumentation et critères de validation.
+
+**Ce qui reste propre à chaque famille** (deux implémentations, sous le même contrat) :
+
+| Domaine | AR | dLLM |
+|---|---|---|
+| ordre de génération | séquentiel causal | parallèle par bloc, itératif |
+| granularité d'avancement | 1 jeton par pas | k jetons par pas, k variable |
+| granularité de validation | préfixe strictement croissant | fenêtre, ensemble de positions, révisions locales |
+| granularité de restauration | point de KV | point de KV **et** point d'état récurrent |
+| politique d'attention | glissante / sliding window | bidirectionnelle intra-bloc, croissante, horizon |
+| sémantique de l'horizon | fenêtre contextuelle | horizon de dénoisage + fenêtre d'attention |
+
+**Conséquence normative** : le contrat commun MUST être typé par famille (`Mode = AR | Diffusion`) avec des politiques distinctes. Un agent MUST NOT « unifier » en écrivant un algorithme unique de génération, ni en traitant l'AR comme une spécialisation booléenne du dénoisage.
+
+
 
 ---
 
 ## 3. Exigences fonctionnelles
 
+Chaque exigence porte un **critère d'acceptation** et un **niveau de maturité** (§2.4). Les IDs sont celles de la baseline auditée ; les ajouts sont numérotés à la suite.
+
 ### 3.1 Cycle de génération
 
-| # | Exigence |
-|---|---|
-| R-1 | Le moteur MUST convertir un checkpoint en structures d'inférence (grappes de kernels, buffers, formats de poids, plans d'exécution). |
-| R-2 | Le cycle MUST traiter le préfill, la construction des préfixes autorisés, le dénoisage de bloc, la validation de jetons, la mise à jour de l'état d'attention, la décision d'horizon, le commit. |
-| R-3 | Un cycle MUST exposer des points de contrôle observables pour l'ordonnanceur : position du prochain bloc, taille de l'horizon, politique d'attention, politique de validation, révision, fenêtre active. |
-| R-4 | Le cycle MUST être compatible avec la capture de plans d'exécution à formes fixes et les appels de kernels. |
-| R-5 | Le cycle MUST permettre des révisions locales : un jeton non validé, une fenêtre annulée, un état intermédiaire rejeté. |
-| R-6 | Le cycle MUST être réutilisable pour le préfill, la continuation, la reprise de session, l'interpolation, la reconstruction. |
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-1 | Le moteur MUST charger un checkpoint (natif dLLM, AR, adapté par outillage externe §8.1) en structures d'inférence : kernels, buffers, formats de poids, plans d'exécution. | le chargement échoue explicitement si une capacité déclarée n'est pas supportée (`I-14`) | STABLE |
+| R-2 | Le cycle MUST traiter le préfill, la construction des préfixes autorisés, le dénoisage de bloc, la validation de jetons, la mise à jour de l'état d'attention, la décision d'horizon, le commit. | un pas complet observable de bout en bout sur la cible de référence | STABLE |
+| R-3 | Un cycle MUST exposer des points de contrôle observables pour l'ordonnanceur : position du prochain bloc, taille de l'horizon, politique d'attention, politique de validation, révision, fenêtre active. | chaque champ est journalisé et rejouable | STABLE |
+| R-4 | Le cycle MUST être compatible avec la représentation statique d'un plan à formes fixes et avec les appels de kernels (§4.4). | le plan est reproductible sans ré-encodage de la structure de contrôle | STABLE |
+| R-5 | Le cycle MUST permettre des révisions locales : un jeton non validé, une fenêtre annulée, un état intermédiaire rejeté. | le rewind journalise l'état restauré (positions, KV, état récurrent) | STABLE |
+| R-6 | Le cycle MUST être réutilisable pour le préfill, la continuation, la reprise de session, l'interpolation, la reconstruction. | 5 modes sur la même interface de session | STABLE |
 
 Cycle canonique (7 étapes) :
 
 ```
 1. Préfixe autorisé       — le préfixe valide est présent dans la mémoire de l'état
-2. Horizon                — l'ordonnanceur définit l'horizon de génération
+2. Horizon                — l'ordonnanceur d'inférence définit l'horizon de génération
 3. Fenêtre de bloc        — une fenêtre de blocs est placée pour la dénoisation
 4. Forward + attention    — le modèle évalue le contenu masqué
 5. Candidats + validation — le modèle produit des jetons candidats, la politique de validation marque les validés
@@ -112,91 +183,173 @@ Cycle canonique (7 étapes) :
 7. Décision d'horizon     — l'ordonnanceur ajuste l'horizon pour le cycle suivant
 ```
 
+**Périmètre** : les 7 étapes sont le **contrat d'exécution commun** (`I-1`). Elles décrivent un cycle d'obligations, pas un algorithme de génération unique. L'AR les remplit avec `horizon = 1 position`, `fenêtre = 1`, `validation = immédiate`, **par son chemin causal natif** ; il n'est pas une spécialisation du dénoisage.
+
 ### 3.2 États de jetons
 
-| # | Exigence |
-|---|---|
-| R-7 | Le moteur MUST distinguer jeton masqué, jeton candidat provisoire, jeton validé. |
-| R-8 | Le moteur MUST distinguer **position logique** (ordre dans la séquence d'inférence) et **position physique** (ordre dans les buffers/cache). |
-| R-9 | Le moteur MUST gérer le réordonnement topologique (WeDLM), la réordonnement de blocs (windowing), la réordonnement pour réutilisation de préfixe. |
-| R-10 | Un jeton validé MUST devenir un préfixe autorisé et cache-valide immédiatement dans le régime causal. |
-| R-11 | Un jeton révisé MUST rester réversible : l'état d'attention et l'état de bloc MUST pouvoir être restaurés (rollback). |
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-7 | Le moteur MUST distinguer jeton masqué, jeton candidat provisoire, jeton validé. | trois états typés, jamais un booléen | STABLE |
+| R-8 | Le moteur MUST distinguer **position logique** (ordre dans la séquence d'inférence) et **position physique** (ordre dans les buffers/cache). | mapping journalisé par pas | STABLE |
+| R-9 | Le moteur MUST gérer le réordonnement topologique (WeDLM), le réordonnement de blocs (windowing), le réordonnement pour réutilisation de préfixe. | trois réordonnements typés, testés séparément | STABLE |
+| R-10 | Un jeton validé MUST devenir un préfixe autorisé et cache-valide immédiatement dans le régime causal. | préfixe contigu croissant vérifié | STABLE |
+| R-11 | Un jeton révisé MUST rester réversible : l'état d'attention et l'état de bloc MUST pouvoir être restaurés (rollback). | rollback exact sur KV **et** état récurrent | STABLE |
 
 ### 3.3 Modes de génération
 
-| # | Exigence |
-|---|---|
-| R-12 | Le moteur MUST servir un dLLM natif en dénoisage parallèle par bloc. |
-| R-13 | Le moteur MUST servir un checkpoint bilingue (clean/noisy) en mode Diffusion-Trust. |
-| R-14 | Le moteur MUST servir un checkpoint bilingue en mode AR-Trust (vérification spéculative sur clean-stream). |
-| R-15 | Le moteur MUST servir un checkpoint AR comme cas dégénéré du cycle (0 étape de raffinement, largeur 1, validation immédiate). |
-| R-16 | Le moteur MUST servir un checkpoint adapté dLLM (WeDLM/FLUID) en streaming causal. |
-| R-17 | La sélection du mode MUST être déclarative (déduite du checkpoint + configuration), pas un fork de code. |
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-12 | Le moteur MUST servir un dLLM natif en dénoisage parallèle par bloc. | cycle complet sur la cible de référence | STABLE |
+| R-13 | Le moteur MUST servir un checkpoint **dual-stream** (flux `clean` / `noisy`) en mode `Diffusion-Trust`. | le mode est déclaré par le checkpoint ; refus si le checkpoint n'a qu'un flux | STABLE |
+| R-14 | Le moteur MUST servir un checkpoint **dual-stream** en mode `AR-Trust` (vérification spéculative sur le flux `clean`). | équivalence de distribution vérifiée (§5.5) | STABLE |
+| R-15 | Le moteur MUST servir un checkpoint AR **par son chemin causal natif**, sous le contrat commun d'exécution. NEVER l'exprimer comme une spécialisation du cycle de dénoisage, NEVER une seconde boucle AR non typée. | test de causalité stricte : aucune fuite des positions futures | STABLE |
+| R-16 | Le moteur MUST servir un checkpoint adapté dLLM (WeDLM, FLUID, FLARE, Clover) en streaming causal, sur la base de son `AdaptationFile`. | préconditions vérifiées au chargement | STABLE |
+| R-17 | La sélection du mode MUST être déclarative (déduite du checkpoint + configuration), pas un fork de code. | un mode par session, déclaré, sans branche de code | STABLE |
 
-### 3.4 Ordonnanceur
+### 3.4 Ordonnanceur d'inférence
 
-| # | Exigence |
-|---|---|
-| R-18 | L'ordonnanceur MUST fonctionner comme un contrôleur d'horizon élastique : à chaque pas, il choisit le nombre de positions résolues, la longueur de la fenêtre, la profondeur de vérification. |
-| R-19 | L'horizon MUST être adaptatif, borné par un plafond d'horizon (paramètre K). |
-| R-20 | L'horizon MUST être borné par la **frontière de compétence** : au-delà de la confiance de validation, l'horizon ne doit pas s'étendre. |
-| R-21 | La porte de confiance MUST être un seuil de confiance par position (γ). Les positions sous le seuil ne sont pas résolues. |
-| R-22 | Le pas de stride MUST être adaptatif : `stride = 1 + Δ`, Δ étant la confiance moyenne au-delà du seuil (1 + Δ positions résolues à chaque pas). |
-| R-23 | L'ordonnanceur MUST s'informer de : incertitude de prédictions, stabilité de préfixe, coût de transfert, disponibilité de VRAM, cache misses, bandes passantes, capacité de kernels. |
-| R-24 | L'ordonnanceur MUST décider la réallocation dynamique des pools de VRAM entre pools (KV, récurrent, cache d'experts) et l'adaptation de la fenêtre active. |
-| R-25 | L'ordonnanceur MUST appliquer la sélection de remplissage par entropie **pénalisée par la distance** : `H̃ᵢ = Hᵢ + λ·dᵢ` (dᵢ = distance au masque le plus à gauche), et remplir les positions dont `H̃ᵢ < τ`. |
-| R-26 | L'ordonnanceur MUST maximiser la métrique de cache-prefix (p_cache) : la croissance du préfixe contigu, pas la couverture de masque. |
-| R-27 | L'ordonnanceur MUST éviter les pauses de fin de bloc : le remplissage de la fenêtre glissante MUST se faire à la volée, à travail par forward quasi constant. |
-| R-28 | La politique de commit MUST être déterministe pour une graine donnée. |
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-18 | L'ordonnanceur d'inférence MUST décider à chaque pas le nombre de positions résolues, la longueur de la fenêtre et la profondeur de vérification, **dans les capacités déclarées du modèle** (longueur de canvas, taille de bloc, fenêtre glissante). | la décision est fonction des paramètres du checkpoint, pas d'une constante globale | STABLE |
+| R-19 | L'horizon MUST être adaptatif, borné par un plafond d'horizon (paramètre K). | K configuré, plafond vérifié | STABLE |
+| R-20 | L'horizon MUST être borné par la **frontière de compétence** : au-delà de la confiance de validation, l'horizon ne s'étend pas. | frontière mesurée | RESEARCH |
+| R-21 | La porte de confiance MUST être un seuil de confiance par position (γ). Les positions sous le seuil ne sont pas résolues. La définition exacte de γ, de son domaine et de sa source (équation de l'article FLUID) MUST être écrite avant implementation. | prototype + mesure du débit gagné sur la cible AR | RESEARCH |
+| R-22 | Le pas de stride MUST être adaptatif : `stride = 1 + Δ`. MUST définir Δ (définition, domaine de valeurs, conversion en nombre entier de positions) et citer l'équation source ; à défaut, la politique est une **hypothèse de recherche** à valider, pas une règle de production. | équation écrite + prototype mesuré | RESEARCH |
+| R-23 | L'ordonnanceur MUST s'informer de : incertitude de prédictions, stabilité de préfixe, coût de transfert, disponibilité de VRAM, cache misses, bandes passantes, capacité de kernels. | les informations proviennent de l'ordonnanceur de ressources (R-84..R-89), pas d'une lecture directe du device | STABLE |
+| R-24 | La réallocation dynamique des pools (KV, récurrent, cache d'experts) et l'adaptation de la fenêtre active MUST être décidées par l'**ordonnanceur de ressources** sur requête de l'ordonnanceur d'inférence. | requête / accord / rejet journalisés | STABLE |
+| R-25 | Un adaptateur de décodage **causal compatible WeDLM** MUST déclarer ses préconditions (décodage causal strict, préfixe contigu, logits disponibles pour les positions masquées). Dans ce cadre, la sélection de remplissage MUST utiliser l'entropie pénalisée par la distance `H̃ᵢ = Hᵢ + λ·dᵢ` (dᵢ = distance au masque le plus à gauche) et remplir les positions dont `H̃ᵢ < τ`. | test de sélection + refus de précondition sur un modèle non compatible | STABLE |
+| R-26 | L'ordonnanceur MUST maximiser la métrique de cache-prefix (`p_cache`) : la croissance du préfixe contigu, pas la couverture de masque. | `p_cache` croissant mesuré par pas | STABLE |
+| R-27 | L'ordonnanceur MUST éviter les pauses de fin de bloc : le remplissage de la fenêtre glissante MUST se faire à la volée, à travail par forward quasi constant. | travail par forward mesuré quasi constant | STABLE |
+| R-28 | La politique de commit MUST être déterministe pour une graine donnée. | deux exécutions même graine → même séquence de commits | STABLE |
 
 ### 3.5 Mémoire polymorphe
 
-| # | Exigence |
-|---|---|
-| R-29 | Le moteur MUST gérer une hiérarchie de mémoire unique sur VRAM, RAM, NVMe. |
-| R-30 | Le moteur MUST stocker en VRAM : attention et mixeurs DeltaNet, poids gated-residual, routeurs, experts partagés, tête de sortie, couche de draft, KV cache (partie la plus lue), cache d'experts, états récurrents. |
-| R-31 | Le moteur MUST garder en RAM : l'ensemble des experts (pinnés), les tables n-gram (pinnées), la hiérarchie de blocs. |
-| R-32 | Le moteur MUST garder sur NVMe : tables n-gram complètes, poids quantifiés, séquences de validation, checkpoints de KV. |
-| R-33 | Les décisions de placement MUST prendre en compte le coût de transfert, la taille du bloc, la réutilisation de préfixe, les fenêtres glissantes, les graphes d'exécution. |
-| R-34 | Le moteur MUST effectuer des contrôles d'admission : une requête, un état de cache, un pool d'experts, une fenêtre de génération est admise ou refusée en fonction des limites mesurées du device. |
-| R-35 | Le moteur MUST utiliser des tampons double pour le streaming de poids et la persistance. |
-| R-36 | Le moteur MUST masquer les chargements : charger un expert manquant pendant l'inférence de l'expert partagé et des experts déjà en RAM ; charger la couche suivante pendant l'inférence de la couche courante. |
-| R-37 | Le moteur MUST calculer les experts manquants sur CPU **en place**, en parallèle avec le GPU, selon un ratio d'allocation par pas calibré par mesure. |
-| R-38 | Le cache d'experts MUST être un pool LRU à capacité adaptative (taux d'occupation d'une fraction de VRAM). |
-| R-39 | Le moteur MUST adapter le cache d'experts aux métriques de routeur (fréquence d'apparition, entropie, couverture de top-k). |
-| R-40 | Le moteur MUST anticiper la sélection d'experts (prediction routing) : prédire les experts nécessaires pour les 1 à 2 prochains tokens afin de déclencher le transfert en avance. |
-| R-41 | Le cache MUST avoir un **plancher de capacité** garantissant que le pool tient au moins les experts d'un pas complet (le pool d'un pas ne MUST pas thrasher pendant la décodation du pas). |
-| R-42 | Le moteur MUST utiliser la mémoire pinnée zéro-copy, les plans d'exécution, la réallocation dynamique de VRAM. |
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-29 | Le moteur MUST gérer une hiérarchie de mémoire unique sur VRAM, RAM, NVMe. | une seule hiérarchie, une seule interface d'allocation | STABLE |
+| R-30 | Le moteur MUST classer les objets par **rôle** (chaud, tiède, froid, persisté, table, scratch) et MUST placer chaque objet selon son rôle, sa taille, sa fréquence d'accès et son coût de transfert. MUST NOT imposer une partition matérielle fixe par catégorie d'objet. | le placement est reproductible à partir des besoins déclarés et des limites du device | STABLE |
+| R-31 | Le moteur MUST garder en RAM un ensemble d'experts **selon le budget accordé** ; la politique MUST être compatible avec des modèles dont la taille dépasse la mémoire système disponible. | admission explicite (R-34, R-88) ; le placement est décidé, pas imposé | STABLE |
+| R-32 | Le moteur MUST garder sur NVMe : tables n-gram complètes, poids quantifiés, séquences de validation, checkpoints de KV. | lecture par lignes, persistance cohérente | STABLE |
+| R-33 | Les décisions de placement MUST prendre en compte le coût de transfert, la taille du bloc, la réutilisation de préfixe, les fenêtres glissantes, la structure des plans d'exécution. | décision journalisée avec le coût de transfert et le coût de calcul | STABLE |
+| R-34 | Le moteur MUST effectuer des contrôles d'admission : une requête, un état de cache, un pool d'experts, une fenêtre de génération est admise ou refusée en fonction des limites mesurées du device. | admission / refus par limites mesurées | STABLE |
+| R-35 | Le moteur MUST utiliser des tampons double pour le streaming de poids et la persistance. | double buffer vérifié sans copie redondante | STABLE |
+| R-36 | Le moteur MUST masquer les chargements (FreeToken) : charger un expert manquant pendant l'inférence de l'expert partagé et des experts déjà résidents ; charger la couche suivante pendant l'inférence de la couche courante. | benchmark transferts / calcul sur une cible à experts en RAM | EXPERIMENTAL |
+| R-37 | Le moteur MUST calculer les experts manquants sur CPU **en place**, en parallèle avec le GPU, selon un ratio d'allocation par pas calibré par mesure. Le calcul CPU en production est un mode normal de la session (`I-11`), pas un mode de dégradation. | ratio calibré par mesure sur la cible MoE ; gain net mesuré | STABLE |
+| R-38 | Le cache d'experts MUST être un pool LRU à capacité adaptative (taux d'occupation d'une fraction de VRAM). | LRU mesuré, capacité adaptative vérifiée | STABLE |
+| R-39 | Le moteur MUST adapter le cache d'experts aux métriques de routeur (fréquence d'apparition, entropie, couverture de top-k). | adaptation mesurée par métriques de routeur | STABLE |
+| R-40 | Le moteur MAY anticiper la sélection d'experts (prediction routing) : prédire les experts des 1 à 2 prochains pas afin de déclencher le transfert en avance. MUST être mesuré (justesse, gain de débit, coût mémoire) avant activation. | protocole de mesure + seuil d'abandon | RESEARCH |
+| R-41 | Le cache MUST avoir un **plancher de capacité** garantissant que le pool tient au moins les experts d'un pas complet, **calculé par la formule du modèle** (experts activés, top-k, taille de bloc, taille de fenêtre), pas par une constante globale. | formule dérivée par cible ; pool d'un pas sans thrashing mesuré | STABLE |
+| R-42 | Le moteur MUST minimiser les copies, rendre les transferts explicites et utiliser des buffers de staging. MUST utiliser les plans d'exécution et la réallocation dynamique de VRAM. **La mémoire hôte épinglée zéro-copy n'est pas une exigence portable** : elle MAY être exploitée par un backend dont le runtime natif l'offre, comme optimisation déclarée. | nombre de copies par pas mesuré ; optimisation de backend déclarée comme optionnelle | STABLE |
 
 ### 3.6 Persistance et reprise
 
-| # | Exigence |
-|---|---|
-| R-43 | Le moteur MUST persister des checkpoints d'états d'inférence (KV, états récurrents, états de blocs) sur NVMe. |
-| R-44 | Le moteur MUST reprendre une session depuis un checkpoint persisté (sessions locales longues). |
-| R-45 | Le moteur MUST réutiliser un préfixe persisté entre requêtes (réutilisation de préfixe, radix cache). |
-| R-46 | La persistance MUST respecter la sémantique de la politique d'attention : un état récurrent MUST être cohérent avec la position d'acceptation, pas seulement coupé comme un tail de KV. |
-| R-47 | Le moteur MUST valider la cohérence d'un checkpoint persisté avant de le charger. |
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-43 | Le moteur MUST persister des checkpoints d'états d'inférence (KV, états récurrents, états de blocs) sur NVMe. | reprise à partir du fichier | STABLE |
+| R-44 | Le moteur MUST reprendre une session depuis un checkpoint persisté (sessions locales longues). | reprise après arrêt du processus | STABLE |
+| R-45 | Le moteur MUST réutiliser un préfixe persisté entre requêtes (radix cache). MUST définir les clés d'identité (hachage du préfixe tokenisé, positions, politique d'attention, politique de validation) et les conditions d'invalidation. | deux requêtes à préfixe identique partagent l'état ; un changement de version l'invalidé | STABLE |
+| R-46 | La persistance MUST respecter la sémantique de la politique d'attention : un état récurrent MUST être cohérent avec la position d'acceptation, pas seulement coupé comme un tail de KV. | état récurrent restauré à la position d'acceptation | STABLE |
+| R-47 | Le moteur MUST valider la cohérence d'un checkpoint persisté avant de le charger. | validation au chargement, rejet explicite | STABLE |
+
+**Sécurité et rétention des données persistées** (la persistance stocke des contextes, prompts, historiques et états de session sensibles) :
+
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-75 | La persistance des sessions MUST être **explicitement activée** par l'opérateur, jamais par défaut silencieux. L'emplacement écrit MUST être journalisé au démarrage. | configuration explicite, journal de démarrage | STABLE |
+| R-76 | MUST définir la durée de rétention, la suppression d'une session, la suppression de toutes les sessions, et exposer une interface de suppression. | suppression vérifiable, sans résidu | STABLE |
+| R-77 | MUST définir les permissions des fichiers persistés (propriétaire, mode, racine de configuration de l'opérateur) et journaliser l'emplacement écrit. Aucun écrit hors de la racine déclarée. | permissions vérifiées par test | STABLE |
+| R-78 | MUST invalider toute persistance lors d'un changement de modèle, de révision du checkpoint, de tokenizer, de format de poids ou de politique de validation. | invalidation déclenchée par la détection de version | STABLE |
+| R-79 | MUST documenter la sensibilité des données persistées ; MUST proposer un chiffrement au repos ou documenter explicitement son absence, sans la masquer. | avertissement au démarrage si persistance active et non chiffrée | STABLE |
 
 ### 3.7 Serving
 
-| # | Exigence |
-|---|---|
-| R-48 | Le moteur MUST exposer une API OpenAI-compatible (chat completions, streaming SSE, tool calls). |
-| R-49 | Le moteur MUST servir plusieurs sessions avec une file de workers et un ordonnanceur de batch. |
-| R-50 | Le moteur MUST servir un service local (127.0.0.1) par défaut ; une clé d'API MUST être disponible pour toute exposition au-delà de la boucle locale. |
-| R-51 | Le CLI MUST être la porte d'entrée des agents (invocable, non-interactive, sortie JSON). |
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-48 | Le moteur MUST exposer une API **OpenAI-compatible** (chat completions, streaming SSE, tool calls). | matrice Annexe B remplie et testée par endpoint | STABLE |
+| R-49 | Le moteur MUST servir plusieurs sessions avec une file de workers et un ordonnanceur de batch, **selon des critères d'admission explicites** : budget mémoire des états par requête, longueur de préfixe, politique d'attention compatible, mode de génération identique. | critères de regroupement et d'admission configurés ; latence et mémoire mesurées | STABLE |
+| R-50 | Le moteur MUST servir un service local (127.0.0.1) par défaut ; une clé d'API MUST être disponible pour toute exposition au-delà de la boucle locale. | refus d'exposition sans clé | STABLE |
+| R-51 | Le CLI MUST être la porte d'entrée des agents (invocable, non-interactive, sortie JSON). | sortie JSON stable | STABLE |
+| R-80 | Le moteur MUST exposer une API **Anthropic-compatible** (messages, streaming, tool use, `system`, `stop_reason`, format d'erreurs). | matrice Annexe B remplie et testée par endpoint | STABLE |
+| R-81 | MUST documenter la matrice de compatibilité par API : endpoints, champs acceptés, streaming, contenus, erreurs, fonctionnalités prises en charge et **non prises en charge**. | Annexe B remplie, divergence documentée, pas masquée | STABLE |
+| R-82 | MUST refuser explicitement une requête demandant une fonctionnalité non prise en charge ; NEVER la dégrader silencieusement. | réponse d'erreur normalisée par API | STABLE |
 
 ### 3.8 Validation
 
-| # | Exigence |
-|---|---|
-| R-52 | Le moteur MUST valider la sortie GPU contre des logits de référence. |
-| R-53 | Le moteur MUST valider les représentations de couches de poids contre des représentations de couches de poids de référence. |
-| R-54 | Le moteur MUST valider les décisions de validation de jetons (quand la validation est sensible à des seuils de confiance). |
-| R-55 | Le moteur MUST exécuter des tests de régression de capacités contre un checkpoint réel (suites de cas, pas des scores de leaderboard). |
-| R-56 | Le moteur MUST produire des mesures reproductibles (débit, temps kernel, temps de transfert, occupation mémoire) associées à chaque optimisation. |
-| R-57 | Un changement affectant l'attention, le KV cache, la sémantique de validation, la sélection d'experts, le placement mémoire MUST être testé sur les chemins affectés **avant** d'être retenu. |
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-52 | Le moteur MUST valider la sortie GPU contre des logits de référence. | tolérance mesurée | STABLE |
+| R-53 | Le moteur MUST valider les représentations de couches de poids contre des représentations de référence. | reconstruction vérifiée | STABLE |
+| R-54 | Le moteur MUST valider les décisions de validation de jetons (quand la validation est sensible à des seuils de confiance). | la décision est mesurée elle-même, pas seulement la sortie | STABLE |
+| R-55 | Le moteur MUST exécuter des tests de régression de capacités contre un checkpoint réel (suites de cas, pas des scores de leaderboard). | suites exécutées sur la cible de référence | STABLE |
+| R-56 | Le moteur MUST produire des mesures reproductibles (débit, temps kernel, temps de transfert, occupation mémoire) associées à chaque optimisation. | mesure jointe à l'optimisation | STABLE |
+| R-57 | Un changement affectant l'attention, le KV cache, la sémantique de validation, la sélection d'experts, le placement mémoire MUST être testé sur les chemins affectés **avant** d'être retenu. | tests des chemins affectés avant retention | STABLE |
+
+### 3.9 Format de checkpoint et représentation de poids
+
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-58 | Le moteur MUST lire des checkpoints au format canonique du dépôt (format interne à spécifier, §14.1), MUST lire GGUF et safetensors comme sources d'import. | import vérifié sur les cibles de référence | STABLE |
+| R-59 | Le format MUST conserver la sémantique du checkpoint : formats de poids, structures d'attention, schémas de routage, top-k, nombres d'experts, échelles globales. | fidèle aux déclarations du checkpoint | STABLE |
+| R-60 | Les formats de poids MUST supporter, **par ordre de priorité** : (P0) BF16, FP8 E4M3, MXFP4, INT4 group-quantized, FP4 E2M1, INT8 ; (P1) ggml q<N> (Q3, Q4, Q5, Q6), NVFP4, i-quants ; (extensions ultérieures) FP6, FP16 scaled, FP4 scaled, INT3, INT2. | chaque format prioritaire a une référence numérique et un test de déquantification | STABLE |
+| R-61 | Les formats MUST supporter la conversion de formats de poids vers des représentations de stockage, de transfert et de kernel **sans changer la sémantique**. | trois représentations coordonnées par la métadonnée canonique | STABLE |
+| R-62 | Un format MUST stocker les formats de poids, les structures d'attention, les schémas de routage, la métadonnée de validation. | lecture complète au chargement | STABLE |
+| R-63 | L'import MUST refuser un checkpoint dont la sémantique ne peut être reproduite, avec un diagnostic explicite (NEVER un chargement silencieux). | refus au chargement | STABLE |
+| R-64 | Les tables n-gram MUST rester sur disque et MUST être lues par lignes par token, avec leurs échelles résidentes en RAM. | lecture par lignes vérifiée | STABLE |
+| R-83 | MUST refuser un checkpoint portant un format de poids non listé en indiquant le format rencontré ; NEVER requantifier silencieusement. | refus au chargement | STABLE |
+
+**Trois représentations MUST être définies et coordonnées par la métadonnée canonique** :
+
+```mermaid
+flowchart LR
+  STORE["Représentation de stockage (q&lt;N&gt;, compacte, bit-packed)"] --> TRANS["Représentation de transfert (alignée 256o, DMA-ready)"]
+  TRANS --> KERNEL["Représentation de kernel (layout calculé, décodée)"]
+  STORE -.-> KERNEL
+```
+
+- Le décodage de poids MUST se faire pendant le transfert, caché par le calcul de la couche courante.
+- Les couches de poids MUST rester stockées compactement, MUST être déplacées par le mouvement mémoire, MUST être calculées par les kernels.
+- MUST admettre les échelles exactes : les codes E8M0 0 et 255 MUST être traités comme des valeurs extrêmes (`+0`, `+inf`) et MUST faire échouer l'admission d'un checkpoint les portant, jamais produire une valeur silencieusement fausse.
+
+### 3.10 QA
+
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-65 | La validation MUST utiliser des logits de référence (sortie d'une implémentation de référence du même checkpoint, même graine, même politique d'échantillonnage). | référence déclarée par cible | STABLE |
+| R-66 | Les tolérances MUST être exprimées par format de poids et par politique d'attention, et MUST être mesurées, pas estimées. | valeurs chiffrées mesurées | STABLE |
+| R-67 | Les tests de régression de capacités MUST tourner contre un vrai checkpoint (suites de cas : noyau, difficile), MUST être re-exécutables sans génération pour la notation. | suites re-exécutables | STABLE |
+| R-68 | Un chemin plus rapide avec drift inexpliqué de l'attention, du KV cache ou des logits MUST être rejeté. | rejet documenté | STABLE |
+| R-69 | Les tests MUST couvrir : chemin GPU normal, streaming NVMe, chemins d'offload, chemin CPU-only, chemins de décodage quantifié, chemins de reprise de session. | chaque chemin exercé | STABLE |
+| R-70 | Les tests live de l'API MUST être exécutés uniquement quand la surface d'API est intentionnellement testée. | tests par endpoint | STABLE |
+
+### 3.11 Conversion AR → dLLM (outillage externe, hors moteur)
+
+`N-1` fixe la décision : **le moteur ne convertit pas et n'entraîne pas.** R-71..R-74 décrivent l'outillage externe qui produit les checkpoints adaptés ; elles ne sont pas implémentées dans le moteur et ne MUST PAS être intégrées au chemin d'exécution. Le moteur MUST uniquement **charger** leurs artifacts (R-1, R-16, `AdaptationFile` §8.1).
+
+| # | Exigence (outillage externe) | Maturité |
+|---|---|---|
+| R-71 | MUST concevoir la conversion AR → dLLM comme un pipeline externe de génération de checkpoints (supervision dual-stream clean/noisy, capacité AR du checkpoint source conservée). | FUTURE |
+| R-72 | MUST supporter une supervision de type REPR-ALIGN (alignement cosinus par couche vers un enseignant AR congelé, sans modules d'adaptation, loss pondéré, gel de sous-ensembles de couches). | FUTURE |
+| R-73 | MUST supporter les masques de blocs avec packing au niveau document (échantillons de longueurs variables packés sans padding). | FUTURE |
+| R-74 | MUST supporter le logit shift et le masquage aléatoire du noisy-stream, sans les traiter comme pilotes primaires de la qualité. | FUTURE |
+
+**Conséquence** : la « conversion de checkpoints dans le moteur » est retirée des jalons. L'outillage de conversion est un projet séparé, avec ses propres critères de validation, son propre périmètre (préparation de modèles, pas exécution de production) et ses propres dépendances.
+
+### 3.12 Ordonnanceur de ressources
+
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-84 | MUST disposer d'un **ordonnanceur de ressources** distinct de l'ordonnanceur d'inférence : il décide où réside chaque objet (device, RAM, NVMe, CPU), quand il est déplacé, sous quel budget de transfert. | les deux ordonnanceurs communiquent par une interface typée (requêtes de placement, budgets accordés, rejets) | STABLE |
+| R-85 | Les modèles MUST déclarer leurs besoins d'exécution (états requis, formats, capacités de décodage, préconditions) ; l'ordonnanceur de ressources MUST décider où les satisfaire. Un modèle sans déclaration n'est pas chargé. | refus de chargement sans déclaration | STABLE |
+| R-86 | MUST valider les limites du device (`maxBufferSize`, `maxStorageBufferBindingSize`, `maxUniformBufferBindingSize`, `maxComputeInvocationsPerWorkgroup`, `maxComputeWorkgroupStorageSize`, `maxBindGroups`, `minStorageBufferOffsetAlignment`) **avant** l'encodage des commandes, et échouer explicitement, jamais silencieusement. | le plan est validé contre les limites mesurées en P0 | STABLE |
+| R-87 | MUST garantir que la somme des objets résidents tienne dans le budget accordé par le device. | budget champ du plan, mesuré | STABLE |
+| R-88 | MUST refuser explicitement un modèle dont les besoins dépassent la mémoire disponible, en indiquant si l'exécution est **I/O-dépendante** ; NEVER masquer la contrainte derrière un cache. | message d'admission avant chargement | STABLE |
+| R-89 | MUST comparer le coût de transfert et le coût de calcul sur le lieu de résidence pour décider le placement et l'offload (R-37, R-36). | décision journalisée avec les deux coûts | STABLE |
+
+### 3.13 Mode CPU
+
+| # | Exigence | Critère d'acceptation | Maturité |
+|---|---|---|---|
+| R-90 | MUST supporter le **mode CPU-only complet** sur une machine sans GPU compatible : exécution d'une session entière (chargement, calcul, APIs, persistance) avec les mêmes exigences numériques, de déterminisme et de reprise que tout autre backend (`I-11`). | session complète exécutée sans GPU, débit mesuré et informé à l'opérateur | STABLE |
 
 ---
 
@@ -207,36 +360,44 @@ Cycle canonique (7 étapes) :
 ```mermaid
 flowchart TD
   subgraph SERVE["Surface servie (Rust)"]
-    CLI["CLI (REPL, agent)"]
-    API["API OpenAI-compatible (serveur)"]
+    CLI["CLI (agent, JSON)"]
+    API["API OpenAI + API Anthropic"]
     PERSIST["Persistance & reprise de session"]
   end
   subgraph CORE["Noyau (Rust)"]
     STATE["Machine d'états de session & de jetons"]
-    SCHED["Ordonnanceur d'horizon élastique"]
+    SCHED["Ordonnanceur d'inférence (horizon, fenêtre, sélection)"]
+    RES["Ordonnanceur de ressources (placement, budget de transfert)"]
     PLAN["Plans d'exécution & fichiers de kernels"]
     ADMIT["Contrôles d'admission"]
-    VALID["Validation & mesures"]
+    VALID["Système de validation & mesures"]
   end
   subgraph MEM["Représentation mémoire (Zig)"]
     LAYOUT["Layouts & indexation compactes"]
     POOLS["Pools polymorphes & LRU d'experts"]
     DECODE["Décodage de poids & staging"]
-    ABI["ABI canonique (structs partagés)"]
+    ABI["ABI canonique (structs C, pas de C++)"]
   end
   subgraph GPU["Accélération portable (WebGPU)"]
     KERNELS["Kernels WGSL"]
     BUFFERS["Buffers & files de commandes"]
     LIMITS["Découverte des limites du device"]
   end
+  subgraph CPUP["Backend CPU (Zig)"]
+    CPUK["Kernels CPU, offload d'opérations, mode CPU-only"]
+  end
   SERVE --> CORE
+  CORE --> RES
+  RES --> MEM
   CORE --> MEM
   MEM --> GPU
   GPU --> MEM
   CORE --> GPU
+  MEM --> CPUP
+  CPUP --> MEM
 ```
 
-Frontière normative : **Rust** possède les décisions, l'état et les contrats ; **Zig** possède la représentation et le mouvement des données ; **WebGPU** possède l'exécution. Un contrat ABI partagé (structs C, pas de C++) est le seul moyen de passer des données entre couches.
+Frontière normative : **Rust** possède les décisions, l'état et les contrats ; **Zig** possède la représentation et le mouvement des données ; **WebGPU** et le **CPU** possèdent l'exécution. Un contrat ABI partagé (structs C, pas de C++) est le seul moyen de passer des données entre couches.
 
 ### 4.2 Métadonnées canoniques
 
@@ -245,8 +406,6 @@ Frontière normative : **Rust** possède les décisions, l'état et les contrats
 - Les couches MUST partager la sémantique par des formats communs, des buffers communs et des contrats explicites — NEVER par des suppositions sur la profondeur d'appel.
 
 ### 4.3 Catalogue de kernels dLLM
-
-Fichiers de kernels MUST couvrir les opérations de base du dénoisage dLLM :
 
 ```mermaid
 flowchart LR
@@ -267,53 +426,108 @@ flowchart LR
 | logits | sortie par position, propre au stream |
 | logit shift | aligne la prédiction d'un bloc sur ses positions (FLARE) |
 | confidence | score de confiance par position (entropie, marge, seuil) |
-| seed tokens | sélection des positions à remplir (entropie + pénalité de distance) |
+| seed tokens | sélection des positions à remplir (entropie + pénalité de distance, R-25) |
 | commit & prefix extension | validés → préfixe, préfixe → cache-valide |
 | state update | KV softmax et état récurrent linéaire |
 | expert gather / scatter | LRU d'experts, H2D, scatter des poids manquants |
 | quant decode | décodage q<N> / fp4 / fp8 / ggml vers le layout de kernel |
 
-Chaque kernel MUST être **compact, parallèle, compatible avec les plans d'exécution**, et MUST éviter les allocations inutiles, les dépendances excessives, les synchronisations superflues.
+Chaque kernel MUST être compact, parallèle, compatible avec les plans d'exécution, et MUST éviter les allocations inutiles, les dépendances excessives, les synchronisations superflues. MUST exister en version device **et** en version CPU pour les chemins d'offload (R-37, R-90).
 
 ### 4.4 Plans d'exécution et WebGPU
 
-WebGPU n'offre pas de capture de graphe avec buffers variables : le moteur MUST émuler un plan d'exécution par :
+WebGPU n'offre pas de capture de graphe équivalente aux graphes CUDA. MUST distinguer six niveaux, sans jamais les présenter comme équivalents :
+
+1. **représentation statique d'un plan** ;
+2. **réutilisation des pipelines et des layouts** ;
+3. **réutilisation des buffers** ;
+4. **encodage des commandes** ;
+5. **soumission GPU** ;
+6. **replay native d'un graphe**, uniquement lorsque le backend l'offre.
+
+Le moteur MUST émuler un plan d'exécution par :
 
 1. compilation WGSL au chargement, pipeline cache keyed par identifiant canonique de kernel ;
-2. **plans à forme fixe** : bind group layouts stables, shapes pré-établies, un command encoder regroupe les kernels d'un pas ;
+2. plans à forme fixe : bind group layouts stables, shapes pré-établies, un command encoder regroupe les kernels d'un pas ;
 3. offsets dynamiques (workgroup count, dynamic buffer offsets) pour les variantes de taille ;
 4. réutilisation de buffers par pool, NEVER un buffer par requête.
 
-Le moteur MUST lire les **limites réelles du device** au démarrage (limites WebGPU exposées par l'adaptateur : taille max de storage buffer, taille de workgroup memory, nombre d'invocations par workgroup, nombre de workgroups, limites de binding, absence d'atomic sur f32, absence de type f16 dans le langage de shaders). Le moteur MUST adapter les kernels aux limites, jamais les supposer.
+**Le chemin WebGPU portable MUST NOT être présenté comme équivalent à CUDA Graphs.**
 
-**Précision** : la sémantique numérique de la production est **f32 dans les shaders** ; les poids stockés MUST être décodés vers le layout de kernel. Les conversions MUST être explicites. NEVER compter sur f16 dans les shaders WGSL. NEVER utiliser d'atomic sur f32 (non supporté par la spec WebGPU de base) : les réductions MUST être réalisées par des passes hiérarchiques dans la workgroup memory.
+### 4.5 Limites et fonctionnalités du device
 
-**Requêtes de timing** : les requêtes de timestamps GPU MAY ne pas être disponibles. Le moteur MUST fournir des mesures de timing CPU-side (timer sur submit + map) comme chemin de base, et la précision GPU-side uniquement quand le device l'expose.
+Le moteur MUST lire les limites réelles du device au démarrage et adapter les kernels aux limites, jamais les supposer. Les identifiants MUST être exacts (`GPUSupportedLimits` / wgpu) :
+
+| Limite WebGPU | wgpu (Rust) |
+|---|---|
+| `maxBufferSize` | `max_buffer_size` |
+| `maxStorageBufferBindingSize` | `max_storage_buffer_binding_size` |
+| `maxUniformBufferBindingSize` | `max_uniform_buffer_binding_size` |
+| `maxComputeInvocationsPerWorkgroup` | `max_compute_invocations_per_workgroup` |
+| `maxComputeWorkgroupStorageSize` | `max_compute_workgroup_storage_size` |
+| `maxComputeWorkgroupSizeX/Y/Z` | `max_compute_workgroup_size_x/y/z` |
+| `maxComputeWorkgroupsPerDimension` | `max_compute_workgroups_per_dimension` |
+| `maxStorageBuffersPerShaderStage` | `max_storage_buffers_per_shader_stage` |
+| `maxUniformBuffersPerShaderStage` | `max_uniform_buffers_per_shader_stage` |
+| `maxSampledTexturesPerShaderStage` | `max_sampled_textures_per_shader_stage` |
+| `maxSamplersPerShaderStage` | `max_samplers_per_shader_stage` |
+| `maxBindGroups` | `max_bind_groups` |
+| `minStorageBufferOffsetAlignment` | `min_storage_buffer_offset_alignment` |
+| `minUniformBufferOffsetAlignment` | `min_uniform_buffer_offset_alignment` |
+
+Les noms `maxBoundStorageBufferSize`, `maxInvocationsPerInvocation`, `maxTotalBufferSize`, `maxBoundUniformBuffers` **n'existent pas** dans la spécification WebGPU ; un agent MUST NOT les rechercher.
+
+**Fonctionnalités à déclarer** : `shader-f16`, `float64`, `timestamp-query`, `texture-compression`.
+
+**Précision numérique** : la sémantique numérique de la production est **f32 dans les shaders** ; les poids stockés MUST être décodés vers le layout de kernel ; les conversions MUST être explicites. **WGSL définit le type `f16`**, mais son usage requiert `enable f16;` dans le module **et** la fonctionnalité `shader-f16` sur le device. La règle normative : **le chemin de référence MUST fonctionner sans `f16`** ; lorsque le device expose `shader-f16`, une variante spécialisée MAY être proposée après validation numérique et benchmark. NEVER compter sur `f16` comme chemin de base.
+
+**Atomics** : les atomics de base WGSL portent sur `i32` et `u32` ; il n'existe pas d'atomic `f32` dans le langage de base. Les réductions MUST être réalisées par des passes hiérarchiques dans la workgroup memory.
+
+**Mapping des buffers** : `MAP_READ` se combine uniquement avec `COPY_DST`, `MAP_WRITE` uniquement avec `COPY_SRC` ; un buffer mappé n'est pas disponible pour les opérations GPU tant qu'il reste mappé. Conséquence : la mémoire hôte épinglée zéro-copy n'est pas une garantie portable (`R-42`).
+
+**Requêtes de timing** : les requêtes de timestamps GPU MAY ne pas être disponibles. MUST fournir des mesures de timing CPU-side (timer sur submit + map) comme chemin de base, et la précision GPU-side uniquement quand le device l'expose.
+
+### 4.6 Backend CPU
+
+- backend de référence et de debug ;
+- **backend de production** : mode CPU-only complet (R-90) et offload d'opérations dans les sessions servies sur accélérateurs (R-37) ;
+- sémantique partagée avec les kernels device, les formats de poids, les APIs, la persistance ;
+- instrumentation du coût de calcul et du coût de transfert évité, afin que la décision d'offload soit mesurée (R-89) ;
+- NEVER comme chemin de performance de référence pour les modèles à forte densité de calcul (`N-7`).
+
+### 4.7 Interfaces et ABI
+
+- MUST définir les ABI de bas niveau entre la stack Rust et les modules de performance en Zig **avant P0** : signatures, limites de types, conventions d'erreurs, modes d'appels, transferts de buffers, formats de sérialisation, règles d'alignement (`min_storage_buffer_offset_alignment`).
+- MUST partager les formats de tenseurs et les formats de scale.
+- MUST conserver la granularité native des poids.
+- NEVER dupliquer les formats canoniques ; NEVER convertir silencieusement.
 
 ---
 
 ## 5. Stratégies de génération
 
-### 5.1 Mapping AR / dLLM sur le cycle unifié
+### 5.1 Mapping AR / dLLM sur le contrat commun
 
-| Étape du cycle | dLLM natif | AR |
+| Étape du contrat | dLLM natif | AR |
 |---|---|---|
 | préfixe autorisé | préfixe + positions masquées | préfixe complet |
-| horizon | bloc, fenêtre, horizon élastique | 1 token |
-| politique d'attention | causal strict, ou bidirectionnel intra-bloc | causale |
-| validation | seuil de confiance, entropie, marge | validation immédiate (0 étape de raffinement) |
+| horizon | bloc, fenêtre, horizon élastique | 1 position |
+| politique d'attention | causale sur le préfixe + bidirectionnelle intra-bloc | causale stricte |
+| validation | seuil de confiance, entropie, marge | validation immédiate |
 | mise à jour d'état | KV, état récurrent, état de bloc, état intermédiaire | KV |
-| décision d'horizon | taille de bloc, fenêtre glissante, extension | extension de préfixe (horizon trivial) |
+| décision d'horizon | taille de bloc, fenêtre glissante, extension | extension de préfixe |
+| granularité de restauration | ensemble de positions + masque, état récurrent à la frontière | point de KV |
 
-Le modèle AR MUST être exprimé comme la configuration `{refinement_steps = 0, block_width = 1, validation = immediate}` du cycle dLLM. NEVER une seconde boucle AR.
+**Règle normative** : le contrat commun est typé par famille (`Mode = AR | Diffusion | Hybride`). MUST partager les objets (bloc, masque, fenêtre, horizon, préfixe, état, validation) et le protocole (commit, rewind, journal). NEVER unifier en écrivant une boucle unique de génération, NEVER traiter l'AR comme une spécialisation booléenne du dénoisage (`I-1`, R-15, `N-11`).
 
 ### 5.2 Streaming parallèle (WeDLM)
 
+- Préconditions de l'adaptateur : décodage causale strict, préfixe contigu, logits disponibles pour les positions masquées. MUST refuser un modèle sans ces préconditions (`I-14`).
 - La sélection de remplissage MUST utiliser l'entropie pénalisée par la distance : `H̃ᵢ = Hᵢ + λ·dᵢ`, remplissage des positions sous le seuil τ.
 - Le préfixe contigu rempli MUST être immédiatement cache-valide sous attention causale stricte.
 - La fenêtre glissante MUST conserver une taille W fixe ; à chaque pas les jetons commités sortent et un nombre égal de `[MASK]` entre.
 - Le streaming causal MUST rester nativement supportable par les kernels d'attention causale (prefill en continu), sans kernel modifié.
-- τ ∈ [0.3, 0.6] est la plage recommandée ; λ > 0 contrôle la préférence gauche→droite.
+- τ ∈ [0.3, 0.6] est la plage recommandée ; λ > 0 contrôle la préférence gauche→droite. Ces valeurs MUST être mesurées sur la cible de référence avant d'être retenues comme défaut.
 
 ### 5.3 Horizon élastique (FLUID)
 
@@ -323,12 +537,15 @@ Le modèle AR MUST être exprimé comme la configuration `{refinement_steps = 0,
 - La fenêtre MUST avancer avec `stride = 1 + Δ` ; les positions sous le seuil sont décalées vers la droite.
 - Le pas MUST être borné par la frontière de compétence : l'horizon ne s'étend pas au-delà de la confiance mesurée.
 
+**Exigence de précision (R-21, R-22)** : MUST écrire la définition exacte de Δ, son domaine de valeurs, la conversion du stride en nombre entier de positions, et citer le numéro d'équation ou d'algorithme de l'article source. MUST séparer ensuite, explicitement, les modifications proposées par Alethe.ia. À défaut, cette politique est une **hypothèse de recherche** (`RESEARCH`), pas une règle de production.
+
 ### 5.4 Diffusion-Trust (bloc)
 
 - Bloc de taille B derrière le préfixe causal, dénoisé sur S étapes.
 - À chaque étape s : positions non résolues `Rₛ` ; score `cᵢ` par position ; `Aₛ = {i ∈ Rₛ : cᵢ ≥ γₛ}` ; à `s = S`, toutes les positions restantes sont commitées.
 - Les forwards intermédiaires contiennent des contenus provisoires : leurs états récurrents MUST NOT être écrits dans l'état causal vivant.
 - Après finalisation du bloc, le préfixe autorisé est reconstruit par **causal state replay** : les jetons du bloc sont appliqués à l'état causal.
+- Précondition : checkpoint préparé en **dual-stream** (flux `clean` et `noisy`), déclaré par le checkpoint (R-13). NEVER le nommer « bilingue ».
 
 ### 5.5 AR-Trust (spéculatif sur clean-stream)
 
@@ -336,55 +553,35 @@ Le modèle AR MUST être exprimé comme la configuration `{refinement_steps = 0,
 - Acceptation : `aᵢ ~ Bernoulli(min(1, pᵢ(dᵢ)/qᵢ(dᵢ)))`, `qᵢ` étant **exactement la loi de proposition qui a échantillonné dᵢ**. Recompter `qᵢ` pendant la vérification MUST NOT casser l'équivalence de distribution.
 - Rejet : échantillonner la correction normalisée `[pᵢ − qᵢ]₊`.
 - **Rewind de l'état récurrent à la frontière d'acceptation** : accepter r de K jetons MUST rembobiner l'état récurrent à `S⁽ʳ⁾`, pas seulement couper un tail de KV. Deux chemins : replay (r mises à jour par couche GDN) ou cache-and-scatter (états enregistrés par position de vérification, commit par un kernel fused gather-scatter).
+- Précondition : checkpoint dual-stream (R-14). NEVER proposer ce mode sur un checkpoint à flux unique.
 
 ### 5.6 Vérification de couches récurrentes
 
 - Pour les architectures hybrides (softmax + linéaire), le moteur MUST préserver la cohérence de l'état récurrent à la frontière de commit. NEVER traiter l'état récurrent comme un KV tail trim.
+- Cible de référence : Clover (paramètres GDN bidirectionnels additionnels : right-convolution, contrôles softmax) et les modèles à GDN / Mamba / SSM déclarés.
 
 ### 5.7 Politiques de validation
 
-- La politique de validation MUST être déclarée par le mode de génération : seuil d'entropie, marge, confiance de score, acceptation spéculative.
-- La politique MUST être testable : un test MUST mesurer la décision de validation elle-même (pas seulement la sortie finale).
+- La politique de validation MUST être déclarée par le mode de génération : seuil d'entropie, marge, confiance de score, acceptation spéculative, arrêt adaptatif.
+- MUST être un **validateur typé** (§6.3), pas un champ global.
+- MUST être testable : un test MUST mesurer la décision de validation elle-même (pas seulement la sortie finale).
+- MUST refuser un checkpoint qui ne remplit pas ses préconditions.
+
+### 5.8 Modes de décodage dLLM et arrêt adaptatif
+
+- MUST supporter `LowConfidence` (remplir les positions dont la confiance dépasse un seuil, sinon la plus confiante pour garantir la progression ; seuil 0.95 et bloc 32 sur Clover), `EntropyBound` (sélection sous une borne d'information mutuelle, ré-noisyation complète des positions non sélectionnées ; borne 0.1, max 48 pas, température 0.8 → 0.4 sur DiffusionGemma), `TopK` (sélection des k positions les plus confiantes).
+- MUST supporter l'**arrêt adaptatif** : terminaison anticipée d'un canvas lorsque la confiance est stable, sur des conditions explicites (entropie moyenne sous un seuil **et** prédictions identiques sur deux pas consécutifs). MUST les exposer comme des paramètres mesurés, pas comme un champ opaque.
+- MUST respecter la granularité native : canvas 256 (DiffusionGemma), bloc 32 (Clover), valeurs déclarées par les checkpoints adaptés.
 
 ---
 
-## 6. Format de checkpoint et représentation de poids
+## 6. Validation et QA
 
-### 6.1 Contrat de format
-
-| # | Exigence |
-|---|---|
-| R-58 | Le moteur MUST lire des checkpoints au format canonique du dépôt (format interne à spécifier), MUST lire GGUF et safetensors comme sources d'import. |
-| R-59 | Le format MUST conserver la sémantique du checkpoint : formats de poids, structures d'attention, schémas de routage, top-k, nombres d'experts, échelles globales. |
-| R-60 | Les formats de poids MUST supporter : fp8, int4, int3, ggml q<N> (Q3, Q4, Q5, Q6), NVFP4, i-quants. |
-| R-61 | Les formats MUST supporter la conversion de formats de poids vers des representations de stockage, de transfert et de kernel **sans changer la sémantique**. |
-| R-62 | Un format MUST stocker les formats de poids, les structures d'attention, les schémas de routage, la métadonnée de validation. |
-| R-63 | L'import MUST refuser un checkpoint dont la sémantique ne peut être reproduite, avec un diagnostic explicite (NEVER un chargement silencieux). |
-| R-64 | Les tables n-gram MUST rester sur disque et MUST être lues par lignes par token, avec leurs échelles résidentes en RAM. |
-
-### 6.2 Représentations de poids
-
-Trois représentations MUST être définies et coordonnées par la métadonnée canonique :
-
-```mermaid
-flowchart LR
-  STORE["Représentation de stockage (q<N>, compacte, bit-packed)"] --> TRANS["Représentation de transfert (pinnée, alignée 256o, DMA-ready)"]
-  TRANS --> KERNEL["Représentation de kernel (layout calculé, décodée)"]
-  STORE -.-> KERNEL
-```
-
-- Le décodage de poids MUST se faire pendant le transfert, caché par le calcul de la couche courante.
-- Les couches de poids MUST rester stockées compactement, MUST être déplacées par le mouvement mémoire, MUST être calculées par les kernels.
-
----
-
-## 7. Validation et QA
-
-### 7.1 Hiérarchie de validation
+### 6.1 Hiérarchie de validation
 
 ```mermaid
 flowchart TD
-  L1["Logits de référence"] --> V1["Sortie GPU"]
+  L1["Logits de référence"] --> V1["Sortie GPU / CPU"]
   L2["Représentations de couches de poids"] --> V2["Reconstruction de couches"]
   L3["Décisions de validation (seuils de confiance)"] --> V3["Politique de validation"]
   L4["Tests de régression de capacités"] --> V4["Qualité des sorties"]
@@ -392,61 +589,136 @@ flowchart TD
   V1 & V2 & V3 & V4 & V5 --> ADMIT["Contrôle d'admission de la structure de calcul"]
 ```
 
-### 7.2 Règles
+### 6.2 Système de validation
 
-| # | Exigence |
-|---|---|
-| R-65 | La validation MUST utiliser des logits de référence (sortie d'une implémentation de référence du même checkpoint, même graine, même politique d'échantillonnage). |
-| R-66 | Les tolérances MUST être exprimées par format de poids et par politique d'attention, et MUST être mesurées, pas estimées. |
-| R-67 | Les tests de régression de capacités MUST tourner contre un vrai checkpoint (suites de cas : noyau, difficile), MUST être re-exécutables sans génération pour la notation. |
-| R-68 | Un chemin plus rapide avec drift inexpliqué de l'attention, du KV cache ou des logits MUST être rejeté. |
-| R-69 | Les tests MUST couvrir : chemin GPU normal, streaming NVMe, chemins d'offload, chemins de décodage quantifié, chemins de reprise de session. |
-| R-70 | Les tests live de l'API MUST être exécutés uniquement quand la surface d'API est intentionnellement testée. |
+**Une interface, plusieurs validateurs typés.** Le protocole est partagé (journal, commit, rewind, rejet), la logique de décision est spécialisée. NEVER la fusionner en une logique unique (`I-4`, `N-11`).
+
+```
+interface Protocol :
+  validate(session, step)   -> Commit | Reject(ValidationError)
+  commit(session, positions)
+  rewind(session, target)   -> Rewind { positions, kv_points, recurrent_points }
+  journal(event)
+```
+
+| Validateurs | Préconditions | Granularité de restauration |
+|---|---|---|
+| `ValidatorPrefixe` | décodage causal strict, préfixe contigu | point de KV |
+| `ValidatorBloc` | bloc, masque de positions, granularité de sélection | ensemble de positions + masque |
+| `ValidatorSpéculatif` | couche de draft, parité avec le mode non-spéculatif, loi de proposition `qᵢ` exacte | point complet + état récurrent à `S⁽ʳ⁾` |
+| `ValidatorÉtatRécurrent` | GDN / Mamba / SSM avec points de restauration | point d'état récurrent |
+| `ValidatorPoids` | format listé, échelles, tolérance numérique | couche de poids |
+
+**Un AR strict est servi par `ValidatorPrefixe`** ; il n'est pas un cas particulier de `ValidatorBloc`.
+
+### 6.3 Matrice d'équivalence numérique
+
+| Niveau | Comparaison | Tolérance |
+|---|---|---|
+| L1 | logits de la cible de référence vs implémentation de référence | tolérance par format de poids (mesurée, R-66) |
+| L2 | état récurrent (GDN) après restauration à la frontière d'acceptation | exact |
+| L3 | état de diffusion après commit vs référence | exact |
+| L4 | déquantification des formats prioritaires vs référence FP32 | tolérance par format |
+| L5 | sélection de positions sur les mêmes logits entre implémentations | tolérance mesurée |
+| L6 | sortie texte d'une session persistée vs session en mémoire | exact |
+
+### 6.4 Règles de QA
+
+- R-65..R-70 (R-52..R-57 pour la validation de sortie, de couches, de décisions, de régressions, de mesures, de tests des chemins affectés).
+- MUST couvrir le chemin CPU-only (R-90) et les chemins d'offload (R-37) dans les suites de régression (R-69).
+- MUST valider la persistance (§6.4).
 
 ---
 
-## 8. Écosystème de modèles
+## 7. Écosystème de modèles
 
-Le moteur MUST prendre en charge la génération de checkpoints, l'évaluation de checkpoints et la validation de checkpoints pour trois familles :
+### 7.1 Trois familles de checkpoints
 
-1. **Checkpoints dLLM natifs** — générés directement comme dLLM.
-2. **Checkpoints dLLM adaptés** — AR convertis (WeDLM, FLUID, FLARE, Repr-Align).
-3. **Checkpoints AR** — compatibles par le mode dégénéré.
+1. **Checkpoints dLLM natifs** — générés directement comme dLLM par leurs éditeurs (DiffusionGemma, Clover) ; dans le périmètre du moteur.
+2. **Checkpoints dLLM adaptés** — AR convertis par un outillage externe (R-71..R-74, FUTURE) et livrés avec un `AdaptationFile` ; chargés par le moteur (R-16).
+3. **Checkpoints AR** — servis par le chemin causal natif (R-15).
 
-Objectif : permettre les comparaisons de capacités, la validation de transferts et la sélection de configurations sans redéfinir l'architecture.
+`AdaptationFile` : `AdaptationFile { mapping_poids, couches_converties, preconditions, limites_validité, références_numériques, version_checkpoint, version_outillage }`. MUST lire l'artifact d'adaptation et refuser un checkpoint adapté sans artifact. NEVER produire l'artifact dans le moteur.
 
-### 8.1 Méthodes d'adaptation
+**Capacités déclarées par le checkpoint** (préconditions de R-13, R-14, R-25, R-27, R-37, R-85) :
 
-| # | Exigence |
-|---|---|
-| R-71 | Le moteur MUST supporter la conversion AR → dLLM par supervision bilingue (clean-stream causale + noisy-stream masqué) et MUST conserver la capacité AR du checkpoint source. La seule supervision de bloc-diffusion pure n'est pas preservatrice de capacité. |
-| R-72 | Le moteur MUST supporter la supervision de type Repr-Align : alignement cosinus par couche vers un enseignant AR **congelé**, sans modules d'adaptation, avec un loss pondéré. MUST supporter le gel de sous-ensembles de couches (embeddings, blocs MLP). |
-| R-73 | Le moteur MUST supporter les masques de blocs avec **packing au niveau document** (isolant des échantillons de longueurs variables dans des batchs packés, sans padding). |
-| R-74 | Le moteur MUST supporter le logit shift et le masquage aléatoire du noisy-stream (compatibilité de décodage), sans les traiter comme des pilotes primaires de la qualité. |
+```
+Capabilities {
+  mode_natif        : AR | Diffusion | Hybride
+  taille_bloc       : u32          # 256 (DiffusionGemma), 32 (Clover)
+  fenêtre_glissante : u32          # 1024 (DiffusionGemma)
+  contexte_max      : u32          # 256K / 128K
+  experts           : { total, actifs, partagés, top_k }
+  formats_poids     : [Format]
+  états_recurrents  : [GDN | Mamba | SSM | None]
+  dual_stream       : bool         # précondition R-13, R-14, R-37
+  table_ngram       : bool         # précondition R-27, R-64
+  weDLM_compatible  : bool         # précondition R-25
+}
+```
 
-### 8.2 Rôle de la mémoire dans les transferts
+### 7.2 Matrice de support des modèles de référence
 
-La mémoire hiérarchique MUST supporter la phase de conversion (préparation des structures de couches, indexation des blocs, reconstruction de couches, validation de la représentation) avec des plans d'exécution explicites et des contrôles d'admission. La conversion est un cas d'usage de la mémoire, pas un module séparé.
+| Modèle | DiffusionGemma 26B A4B (it) | Clover-35B-A3B-Preview |
+|---|---|---|
+| Éditeur | Google DeepMind | DiffuSpace |
+| Dépôt | `google/diffusiongemma-26B-A4B-it` (HF), `google-gemma` | `Diffuspace/Clover-35B-A3B-Preview` (HF), `DiffuSpace/Clover-35B-A3B-Preview` (code + backends) |
+| Licence | Apache 2.0 | Apache 2.0 (base Qwen3.6-35B-A3B, Alibaba Cloud) |
+| Revision épinglée | à fixer par commit HF | `4b0402b65e` (cité par la carte), à confirmer |
+| Architecture | encoder-décodeur, MoE 25.2B / 3.8B actifs, 30 couches | MoE 35B / ~3B actifs, 40 couches |
+| Génération | block-autoregressive multi-canvas, dénoisage parallèle | block diffusion + `LowConfidence` |
+| Attention | encoder AR (prefill + KV), décodeur bidirectionnel sur canvas, cross-attention au préfixe, sliding window 1024, contexte 256K | GDN hybride + full attention, bidirectionnel intra-bloc par paramètres GDN additionnels (right-convolution, contrôles softmax), préfixe causal préservé, contexte 128K |
+| Granularité | canvas 256, 15-20 jetons par passe, max 48 pas de dénoisage | bloc 32, seuil 0.95 |
+| MoE | 8 actifs / 128 total + 1 partagé | top-8 / 256 routés + 1 partagé ; `moe_block_coreset` (top-p 0.9) restreint les experts par bloc |
+| Modalité | texte, image, vidéo | texte uniquement |
+| Tokenizer | Gemma 4 (262K) | Qwen3.6 |
+| Formats de poids | à épingler depuis les shards du dépôt | BF16 (~69 GB) dans la distribution HF de référence |
+| Échantillonnage | Entropy-Bounded Denoising, arrêt adaptatif (entropie < 0.005, stabilité sur 2 pas), température 0.8 → 0.4 | `LowConfidence`, contrôles de répétition et de longueur (`dllm_length_penalty`, `dllm_think_end_bias`), self-speculative (SGLang / llama.cpp) |
+| Préconditions moteur | `mode_natif = Hybride`, `taille_bloc = 256`, `fenêtre_glissante = 1024`, `dual_stream = false`, `table_ngram = false` | `mode_natif = Diffusion`, `taille_bloc = 32`, `états_recurrents = GDN`, `dual_stream = false`, `table_ngram = false` |
+| État du support | **non commencé** (cible P1) | **non commencé** (cible P3) |
+
+**Règles** :
+
+- MUST nommer les cibles dans la configuration, avec la revision épinglée du checkpoint.
+- MUST mettre à jour la matrice à chaque progression : `non commencé` → `expérimental` → `partiel` → `validé`.
+- MUST traiter la matrice comme le contrat de support : un modèle absent n'est pas pris en charge ; un agent MUST NOT l'ajouter de sa propre initiative.
+- MUST respecter les valeurs déclarées (granularité, fenêtre, MoE, arrêt adaptatif) : la longueur de canvas de DiffusionGemma (256) et la taille de bloc de Clover (32) sont des propriétés distinctes ; MUST NOT les confondre.
+- MUST NOT supposer un checkpoint dual-stream : aucun des deux modèles de référence ne le déclare. Les modes R-13 / R-14 restent indisponibles tant qu'un checkpoint dual-stream n'est pas chargé.
+
+### 7.3 Rôle de la mémoire vis-à-vis de la conversion
+
+La conversion n'est pas un cas d'usage du moteur. Le moteur MUST uniquement charger les artifacts produits, avec leurs préconditions vérifiées (R-16, R-85), leurs mappings de poids et leurs références numériques (R-53, R-61).
 
 ---
 
-## 9. Jalons de développement
+## 8. Jalons de développement
 
 | Jalon | Livrables | Critères d'acceptance |
 |---|---|---|
-| **P0** | Le device WebGPU est découvert, les limites sont lues, 2 kernels exécutés, plan d'exécution à forme fixe compilé | `maxBoundStorageBufferSize`, `maxComputeWorkgroupStorageSize`, `maxInvocationsPerInvocation`, `maxTotalBufferSize`, `maxBoundUniformBuffers`, `maxStorageBuffersPerShaderStage` mesurés et appliqués ; absence de f32 atomics et de f16 dans les shaders gérée explicitement |
-| **P1** | Mémoire polymorphe avec 3 pools, contrôle d'admission, réallocation dynamique, buffers double | Une requête est admise/refusée par limites mesurées ; le pool d'experts tient ≥ un pas complet sans thrashing |
-| **P2** | Cycle dLLM complet en causal strict, avec commit immédiat du préfixe et fenêtre glissante | p_cache croît de façon contiguë ; streaming bat le décodage par blocs en débit à qualité égale (mesuré) |
-| **P3** | AR comme mode dégénéré + validation par logits de référence | Le cycle AR est la configuration `{S=0, B=1}` du cycle dLLM ; tolérances mesurées |
-| **P4** | Mode bilingue : Diffusion-Trust et AR-Trust sur le même checkpoint, avec rewind d'état récurrent à la frontière d'acceptation | Les deux chemins décodent depuis un même checkpoint ; l'état récurrent est rembobiné à `S⁽ʳ⁾` sans replay complet |
-| **P5** | Persistance, reprise de session, serving OpenAI-compatible, tests de régression de capacités | Session longue reprise depuis un checkpoint NVMe ; API sert streaming + tool calls |
-| **P6** | Conversion de checkpoints (AR → dLLM, Repr-Align) dans le moteur, avec validation de transfert | Le checkpoint converti préserve la capacité du seed dans les suites de régression |
+| **P0** | device WebGPU découvert, limites lues et appliquées, 2 kernels exécutés, plan d'exécution à forme fixe compilé, mode CPU-only exécuté | les limites §4.5 mesurées et appliquées aux plans ; absence de `shader-f16` et d'atomic `f32` gérée explicitement (le chemin de référence fonctionne sans `f16`) ; déquantification des formats prioritaires validée contre référence (L4) ; préconditions des politiques refusées (R-57, `I-14`) ; session complète en mode CPU-only mesurée (R-90) |
+| **P1** | DiffusionGemma : mémoire polymorphe par rôle, contrôle d'admission, réallocation, tampons double, cycle dLLM complet, préfill AR + canvas 256, arrêt adaptatif | requête admise/refusée par limites mesurées ; plan d'un pas sans thrashing (R-41) ; `p_cache` croît de façon contiguë (R-26) ; parité L1/L3 sur la cible ; débit mesuré |
+| **P2** | ordonnanceur d'inférence complet (horizon, fenêtre, sélection, admission), ordonnanceur de ressources (placement par rôle, budget de transfert, offload), instrumentation | décisions journalisées des deux ordonnanceurs ; transferts mesurés ; R-89 prouvé sur une cible MoE (R-37 mesuré en production) |
+| **P3** | AR sur son chemin natif + Clover : GDN, MoE top-k, couche de draft, validation par logits de référence | causalité stricte vérifiée (R-15) ; tolérances mesurées (R-66) ; restauration de l'état récurrent à la frontière d'acceptation (R-46, L2) |
+| **P4** | APIs OpenAI et Anthropic, streaming, tool calls, matrice Annexe B | conformance par endpoint ; rejets explicites (R-82) ; streaming et tool calls sur les deux APIs |
+| **P5** | persistance NVMe, reprise de session, sécurité et rétention, formats étendus, tests de régression de capacités | session longue reprise depuis un checkpoint NVMe ; validation §6.4 complète (rétention, suppression, permissions, invalidation, chiffrement documenté) |
 
-Ordre imposé par la fiche : P0 → P1 → P2 → P3 → P4 → P5 → P6. NEVER inverser P0 et P3. NEVER implémenter P4 avant la validation de P2.
+**Hors jalons du moteur** : conversion de checkpoints AR → dLLM (R-71..R-74, outillage externe FUTURE), interface graphique (`N-4`), multi-GPU (`N-9`), WASM (`N-8`).
+
+Ordre imposé : P0 → P1 → P2 → P3 → P4 → P5. NEVER inverser P0 et P3. NEVER implémenter un mode de confiance (`R-13`, `R-14`) avant la validation du cycle de P1 sur un checkpoint déclarant `dual_stream`.
+
+### 8.1 P0 — Périmètre initial et mesures
+
+Livrables : structures canoniques (bloc, masque, fenêtre, horizon, préfixe, état récurrent, état de diffusion, session, mode, politique), hiérarchie de placement par rôle, ordonnanceur d'inférence minimal, ordonnanceur de ressources minimal, kernels de base, session, CLI de validation, chargement d'un checkpoint dLLM de référence.
+
+**P0 MUST mesurer** : mémoire par classe (device, RAM, NVMe), débit par classe de kernel, bandes passantes HBM / RAM / PCIe, latence d'appels, coût de compilation d'un pipeline, coût d'encodage d'un plan, formes de workgroups effectives, atomics disponibles, formats de poids réellement décodables, fonctionnalités absentes (`shader-f16`, `float64`, `timestamp-query`).
+
+**P0 MUST valider** : la déquantification de chaque format prioritaire contre une référence de précision (FP32, et l'implémentation de référence du checkpoint si disponible) avec tolérances définies ; le refus des formats non listés (R-83) ; le refus des préconditions manquantes ; la session complète en mode CPU-only.
+
+**P0 MUST produire** : rapport de capacités par device, rapport de références numériques, mesures de bandes passantes, formes de workgroups, atomics disponibles, fonctionnalités absentes, débit CPU mesuré.
 
 ---
 
-## 10. Métriques d'acceptation
+## 9. Métriques d'acceptation
 
 Le moteur MUST mesurer et exposer :
 
@@ -455,163 +727,308 @@ Le moteur MUST mesurer et exposer :
 | `p_cache` | fraction de préfixe cache-valide à chaque pas |
 | tokens/s générés | débit effectif, mesuré sur submit + timer |
 | tokens/forward | jetons produits par forward |
-| bytes transférés | total H2D/D2H par pas |
+| bytes transférés | total H2D / D2H par pas |
 | temps de transfert | temps de la copie de poids |
 | temps kernel | temps cumulé des kernels |
-| occupation VRAM par pool | KV, récurrent, cache d'experts, buffers |
+| occupation par rôle | chaud, tiède, froid, persisté, table, scratch (R-30) |
 | taux de cache miss d'experts | misses / top-k par pas |
 | décodage de poids | temps de décodage par couche |
-| tolérance de logits | écart max contre la référence |
+| tolérance de logits | écart max contre la référence (L1) |
 | taux d'acceptation spéculative | α, horizon K |
-| taille de bloc B / pas S | paramètres effectifs |
+| taille de bloc B / pas S | paramètres effectifs (déclarés par le checkpoint) |
+| coût de calcul vs coût de transfert | décision d'offload (R-89), par opération |
+| coût de réallocation | coût d'un changement de placement (R-24) |
+| positions dénoisées par pas | progression de la dénoisation |
 
 Règle de mesure : une optimisation MUST être justifiée par des **mesures explicites** sur des machines représentatives (VRAM de différentes capacités, RAM, bandes passantes de transfert, occupation de buffers, temps de kernels, débit de tokens). NEVER une revendication sans mesure ; NEVER des mesures non produites par l'agent.
 
+**Règles de terminaison** : un cycle MUST se terminer par un commit, une révision explicite, une limite de pas atteinte, une limite de mémoire atteinte, un rejet de précondition ou une dégradation mesurée. NEVER une terminaison implicite.
+
+**Lisibilité de la sortie** : tokens, métriques de progression (positions dénoisées, pas par canvas), métriques de latence (temps par pas), métriques de qualité (entropie, confiance, stabilités de prédiction).
+
 ---
 
-## 11. Conventions d'implémentation
+## 10. Conventions d'implémentation
 
-| # | Règle |
+Le code base est compact, les interfaces sont étroites, les commentaires sont instructifs.
+
+| # | Convention |
 |---|---|
-| C-1 | Code base petit, lisible, compact. NEVER de code mort, NEVER de patchs pour cas spécifiques, NEVER de complexité supérieure à ce que le problème exige. |
-| C-2 | Commentaires instructifs à côté de l'implémentation sur la mécanique du modèle, la durée de vie des caches, la politique mémoire, l'orchestration d'API. AVOID les documents de design séparés. |
-| C-3 | Interfaces publiques étroites. Le CLI/server MUST NOT connaître les internals de tenseurs. |
-| C-4 | NEVER C++. ABI entre couches en C. |
-| C-5 | NEVER un chargement de GGUF copiant hâtivement tout le fichier ; MUST être mmap-backed pour le chemin GPU par défaut. |
-| C-6 | NEVER ajouter des variantes sémantiques permanentes derrière des flags. |
-| C-7 | NEVER modifier un chemin de production sans tester les chemins affectés (GPU, streaming, offload, décodage quantifié). |
-| C-8 | MUST garder la portabilité WebGPU : NEVER une extension propriétaire dans la sémantique principale. |
-| C-9 | MUST garder le chemin CPU comme référence/debug, pas comme chemin de production. |
-| C-10 | MUST sérialiser l'instance : NEVER plusieurs processus de modèle géant concurrents ; un lock d'instance est intentional. |
-| C-11 | MUST vérifier les limites du device avant de soumettre des plans d'exécution. |
-| C-12 | MUST éviter les grandes exécutions CPU sur des mappings de grande taille. |
-| C-13 | MUST respecter les conventions de contribution : titre de PR prefixé par la zone (`[Engine]`, `[Kernel]`, `[Memory]`, `[Scheduler]`, `[Serving]`, `[Docs]`), un problème par PR, problème → résultat → approche → validation (passé / échoué / non exécuté, gardés séparés) → limites. |
-| C-14 | Un chemin de default MUST rester identique au dernier release ; une nouvelle fonctionnalité MUST être opt-in. |
-| C-15 | AVOID le code non commenté dans les sections de cache, mémoire, formats. |
+| C-1 | Le code de production MUST être compact et direct ; la duplication de logique MUST être supprimée. |
+| C-2 | MUST éviter les allocations inutiles et les dépendances excessives. |
+| C-3 | MUST partager des formats communs, des buffers communs et des contrats explicites. |
+| C-4 | MUST garder les interfaces étroites et les noms évocateurs. |
+| C-5 | MUST implémenter des commentaires instructifs **à côté du code**, pas en périphérique. |
+| C-6 | Les kernels MUST être compact, parallèle, compatible avec les plans d'exécution. |
+| C-7 | MUST utiliser des tampons double et la réallocation dynamique de VRAM. |
+| C-8 | MUST utiliser les limites mesurées du device. |
+| C-9 | Le code de production MUST respecter la granularité native des tenseurs et MUST partager les formats de tenseurs et de scale. MUST conserver les valeurs des scales exactes (E8M0 0 et 255). MUST éviter les copies redondantes, les synchronisations superflues et les conversions implicites de scales. MUST minimiser les conversions. MUST respecter les formats de poids des modèles convertis. |
+| C-10 | MUST éviter la redondance logique, les couches superflues, les dépendances de modules, l'accumulation de conversions, les couches d'adaptation sans valeur sémantique. |
+| C-11 | MUST respecter la sémantique des formats de poids lors des transformations de representations. |
+| C-12 | MUST minimiser les conversions et les allocations de buffers. |
+| C-13 | MUST éviter les passes inutiles et les synchronisations superflues. |
+| C-14 | MUST respecter la sémantique de la persistance. |
+| C-15 | MUST valider les limites du device. |
+
+Règle de structure : un module de production MUST avoir une responsabilité unique, une interface étroite, une taille bornée, sans redondance, sans conversion implicite et sans adaptation de convenance.
 
 ---
 
-## 12. Interface de l'agent de développement
+## 11. Interface de l'agent de développement
 
-L'agent IA de développement MUST :
+L'agent de développement MUST respecter les règles suivantes :
 
-1. Travailler par jalon (§9), en partant de P0.
-2. Pour chaque exigence implémentée, écrire le test d'acceptation correspondant **avant** la déclaration de complétion.
-3. Signaler les exigences non couvertes, les zones non spécifiées, les contradictions.
-4. Produire les mesures (§10) à chaque changement de performance.
-5. NEVER déclarer une capacité sans la mesurer sur la machine où elle tourne.
-6. NEVER marquer une fonctionnalité comme supportée si le chemin est une simulation.
-7. MUST marquer comme **non confirmée** une conclusion issue d'une lecture de code.
-8. MUST signaler le matériel non testé.
-9. MUST garder la hiérarchie des couches dans la structure du dépôt (`core` = Rust, `mem` = Zig, `gpu` = WGSL) avec une arborescence de fichiers reflétant les zones de responsabilité.
+1. MUST lire les exigences, les invariants et les jalons avant d'implémenter.
+2. MUST proposer une décision pour les zones non spécifiées (§14), MUST la faire valider.
+3. MUST joindre une mesure à chaque optimisation.
+4. MUST déclarer les préconditions non remplies avant d'implémenter.
+5. MUST reporter les dépassements de limites du device, les refus d'admission et les dégradations.
+6. MUST respecter la granularité native des tenseurs.
+7. MUST garder les kernels compacts.
+8. MUST journaliser les décisions d'horizon, de placement, d'admission et de commit.
+9. MUST respecter les zones de responsabilité des couches (R-4, §15).
+10. **MUST déclarer le niveau de maturité de chaque exigence touchée avant d'implémenter.**
+11. **MUST reporter un conflit de design au lieu de résoudre localement par une adaptation de convenance.**
+12. MUST refuser un modèle sans préconditions et l'indiquer explicitement.
+13. MUST fournir un protocole de mesure pour les exigences `RESEARCH` et respecter le seuil d'abandon.
+14. MUST déclarer les limites du device.
+15. MUST déclarer les formats de poids refusés.
+16. MUST valider la sémantique des formats de poids et des échelles.
+17. MUST respecter les exigences de persistance et de sécurité (§6.4, R-75..R-79).
+18. MUST valider la compatibilité du checkpoint et de la fonctionnalité demandée avant l'exécution.
+19. MUST refuser une exécution sans préconditions.
+20. MUST refuser une conversion silencieuse.
 
 ---
 
-## 13. Non-objectifs
+## 12. Non-objectifs
 
-| # | Exclusion |
+| # | Non-objectif |
 |---|---|
-| N-1 | Ne pas entraîner des modèles (la conversion de checkpoints est un cas d'usage de la mémoire, pas un pipeline d'entraînement complet). |
-| N-2 | Ne pas concevoir un runner GGUF générique. |
-| N-3 | Ne pas ajouter de sémantique propriétaire par extension GPU. |
-| N-4 | Ne pas construire une interface graphique (produit = moteur + CLI + API). |
-| N-5 | Ne pas multiplier les modes sémantiques derrière des flags. |
-| N-6 | Ne pas introduire C++. |
-| N-7 | Ne pas faire du CPU le chemin de production. |
+| N-1 | Le moteur ne convertit pas des checkpoints et n'entraîne pas des modèles. L'outillage de conversion AR → dLLM est un projet séparé avec ses propres critères de validation, ses dépendances et ses interfaces d'export (R-71..R-74 FUTURE). NEVER intégrer la conversion dans le chemin d'exécution du moteur. |
+| N-2 | Le moteur ne vise pas les scores de leaderboard. |
+| N-3 | Le moteur ne vise pas le training de pleine ampleur. |
+| N-4 | Pas d'interface graphique, de gestion de fichiers, de console d'administration, de modélisation 3D, de support d'entrée multimodale (images), de conversion de checkpoints dans le moteur. |
+| N-5 | Pas de mode de dégradation silencieux. |
+| N-6 | Pas de conversion implicite de sémantique. |
+| N-7 | Pas de mode CPU **dégradé** : le mode CPU complet est un mode normal (R-90) et le calcul CPU d'experts est un mode de production (R-37). NEVER le mode CPU comme chemin de performance de référence pour les modèles à forte densité de calcul. |
+| N-8 | Pas de support WASM / navigateur comme cible de production. |
+| N-9 | Pas de support multi-GPU (la mémoire polymorphe est mono-device). |
+| N-10 | Pas de conversion de format de poids non listée, pas de requantification silencieuse. |
+| N-11 | Pas de fusion des logiques de validation en une logique unique. |
 
 ---
 
-## 14. Index des références
+## 13. Traçabilité et index des références
 
-Chaque exigence MUST être traçable vers une source. L'index ci-dessous est la liste des sources consultées ; les fiches de `docs/fiches_techniques/` sont la synthèse de ces sources.
+### 13.1 Index des sources (revisions épinglées)
 
-| Source | Type | Apport contractuel pour Alethe.IA |
-|---|---|---|
-| [`docs/fiches_techniques/Moteur unifié d'inférence (AR et dLLM).md`](docs/fiches_techniques/Moteur%20unifi%C3%A9%20d'inf%C3%A9rence%20(AR%20et%20dLLM).md) | Fiche de conception | Cycle de génération (R-1..R-6), position logique/physique (R-8), paramètres du cycle (R-3), modes de génération (R-12..R-17), politiques d'attention, hiérarchie de mémoire (R-29..R-42), kernels dLLM (§4.3), conversion de checkpoints (R-71..R-74), jalons (§9), invariants (I-1..I-8, I-11, I-12) |
-| [`docs/fiches_techniques/Exploitation synergique (Rust Zig et WebGPU).md`](docs/fiches_techniques/Exploitation%20synergique%20(Rust%20Zig%20et%20WebGPU).md) | Fiche de conception | Rôles des couches (§2.1), absence de hiérarchie artificielle (I-6), non-duplication (I-7), métadonnées canoniques (§4.2), plans d'exécution (§4.4), limites du device (P0), principes d'architecture (§2.2), conventions (C-1..C-15), exclusions (N-1..N-7) |
-| [`docs/fiches_techniques/Influences et inspirations (DwarfStar4 Strata et FreeToken).md`](docs/fiches_techniques/Influences%20et%20inspirations%20(DwarfStar4%20Strata%20et%20FreeToken).md) | Influences ingénierie | Spécialisation et intégration verticale (§4.1), persistance des états d'inférence (R-43..R-47), contrôle d'admission (R-34), réallocation dynamique (R-24, R-42), validation par logits de référence (R-52..R-57), conventions (C-1..C-15), hiérarchie de mémoire (R-29..R-32), cache d'experts LRU (R-38..R-41), prédiction de routage (R-40) |
-| [`docs/fiches_techniques/Influences et inspirations scientifiques (moteur d'inférence).md`](docs/fiches_techniques/Influences%20et%20inspirations%20scientifiques%20(moteur%20d'inf%C3%A9rence).md) | Influences scientifiques | Streaming parallèle (R-25..R-27), horizon élastique (R-18..R-22), porte de confiance et frontière de compétence (R-20, R-21), rewind d'état récurrent (R-14, §5.5), alignement par couche sans adaptation (R-72), masques de blocs et packing au niveau document (R-73) |
-| [`Strata`](https://stratallm.org/) · [repo](https://github.com/Niko1221/Strata) | Système de référence | Répartition GPU/RAM/SSD (R-30..R-32), cache d'experts adaptatif (R-38), mémoire pinnée zéro-copy (R-42), préfill en grands morceaux, streaming des experts sur PCIe pendant l'attention, fidélité aux formats du checkpoint (R-59), convention de doc et de contribution (C-13, C-14, §12) |
-| [`FreeToken`](https://www.flashml.ai/) · [repo](https://github.com/FlashML-org/FreeToken) | Système de référence | Cache d'experts LRU à capacité adaptative (R-38), calibrage du ratio d'allocation par pas par mesure de bande passante (R-37), réallocation de VRAM entre pools et fenêtre active (R-24, R-42), plannings de transfert par couche et par expert, plannings d'exécution de kernels, contrôles d'admission de la structure de calcul (R-34), conversion de formats de poids sans changement de sémantique (R-61) |
-| [`DwarfStar4`](https://github.com/antirez/ds4) | Système de référence | Spécialisation (I-6, C-2), persistance de KV sur disque et reprise de session (R-43..R-47), validation par logits de référence (R-52..R-57), tests de régression de capacités (R-55, R-67), conventions de code et de structure de dépôt (C-1..C-15), décodage de poids (R-60), tables n-gram (R-64), lock d'instance (C-10), refus de variantes sémantiques derrière des flags (I-9, C-6) |
-| [`WeDLM`](https://arxiv.org/html/2512.22737v1) | Article scientifique | Streaming parallèle sous attention causale standard (R-16, R-26), sélection d'entropie pénalisée par la distance (R-25), commit immédiat du préfixe (R-10), fenêtre glissante sans stop-and-wait (R-27), compatibilité avec les systèmes AR d'inférence (p_cache), gel de sous-ensembles de couches |
-| [`FLUID`](https://arxiv.org/html/2605.27387v1) | Article scientifique | Horizon élastique (R-18), plafond d'horizon K (R-19), porte de confiance par seuil γ (R-21), pas adaptatif `stride = 1 + Δ` (R-22), frontière de compétence (R-20), windowing causal strict |
-| [`FLARE`](https://arxiv.org/html/2606.01774v2) | Article scientifique | Checkpoints bilingues clean/noisy (R-13, R-14), Diffusion-Trust et AR-Trust (R-12..R-14), logit shift (§4.3), causal state replay après bloc (§5.4), rewind de l'état récurrent à la frontière d'acceptation (§5.5), packing au niveau document (R-73), supervision bilingue preservatrice de capacité (R-71), masques compacts et prefix-tile fast path |
-| [`Repr-Align`](https://arxiv.org/html/2605.06885v1) | Article scientifique | Alignement cosinus par couche vers un enseignant AR congelé, sans modules d'adaptation, loss pondéré, gel des embeddings et des blocs MLP (R-72), accélération de la conversion par suppression des overheads de calibration |
+| Source | Reference | Revision épinglée | Usage |
+|---|---|---|---|
+| CUDA | NVIDIA | CUDA 12.8 | comparaison de graphes et de transferts |
+| llama.cpp | `BenoitMalo/xLLaMA.cpp` | `165c8446` | références de formats, décodage de poids, MoE |
+| SGLang | `sgl-project/sglang` | `2c8c1565` | références de serving, MoE, self-speculative |
+| Gemma 4 | `google-gemma` | `5d669da9` | architecture, canvas, formats |
+| Clover | `DiffuSpace/Clover-35B-A3B-Preview` (code + backends), `Diffuspace/Clover-35B-A3B-Preview` (poids) | `4b0402b65e` (à confirmer) | cible de référence dLLM |
+| WebGPU | spécification W3C | version courante | limites, atomics, `f16`, mapping |
+| wgpu | `rustwasm/wgpu` | version épinglée par P0 | noms de limites, features |
+| GGUF | `ggermet/ggml` | version épinglée | formats de poids, n-gram |
+| OpenAI API | spec `OpenAI/openai` | version épinglée | Annexe B |
+| Anthropic API | spec `Anthropic/anthropic` | version épinglée | Annexe B |
+
+MUST utiliser les versions épinglées dans les rapports de références.
+
+**Règles de traçabilité** :
+- MUST rattacher chaque exigence à sa source et à sa nature : `Source`, `Adaptation`, `Hypothèse de recherche` (Annexe A).
+- MUST nommer les sources par repository, nom d'article, référence API et révision épinglée dans la matrice §13.2.
+- **Strata** : le dépôt de référence est **`Niko1221/Strata`**. `ro99/strata` est un **projet homonyme distinct** (moteur C++20/CUDA de placement d'experts) et n'est **pas** une référence d'Alethe.ia. MUST nommer le dépôt et l'organisation dans chaque mention de Strata ; NEVER laisser deux projets homonymes sous une seule référence « Strata ».
+- MUST distinguer, dans chaque exigence, ce qui vient d'un article, ce qui vient d'un dépôt, ce qui est une décision d'Alethe.ia, ce qui est une hypothèse.
+- MUST citer les sections, équations ou algorithmes source pour les formules précises (R-21, R-22, R-25, §5.5, §5.6).
+- MUST déclarer les préconditions des mécanismes empruntés (WeDLM, FLARE, n-gram, dual-stream).
+- MUST employer `checkpoint dual-stream` (flux `clean` / `noisy`), NEVER « checkpoint bilingue ».
+
+### 13.2 Matrice de traçabilité Nature → exigences
+
+`Nature = Source | Adaptation | Hypothèse de recherche` (Annexe A). MUST utiliser un seul nom : `WeDLM` (pas « WeDLLM »).
+
+| ID | Nature | Source précise | Exigences | Zone d'application |
+|---|---|---|---|---|
+| N01 | Source | WeDLM | R-25, R-26, R-27 | décodage causal strict, sélection d'entropie pénalisée, fenêtre glissante |
+| N02 | Source | FLUID | R-21, R-22, R-19 | horizon élastique, seuil par position, stride adaptatif |
+| N03 | Source | FLARE | §4.3 logit shift | logit shift |
+| N04 | Source | Repr-Align (REPR-ALIGN) | R-72 | supervision d'alignement cosinus par couche |
+| N05 | Source | AR-Trust (spéculatif clean-stream) | R-14, §5.5 | acceptation de Bernoulli, `qᵢ` exact, correction `[pᵢ − qᵢ]₊` |
+| N06 | Source | Diffusion-Trust | R-13, §5.4 | bloc de taille B, `Aₛ = {i ∈ Rₛ : cᵢ ≥ γₛ}`, causal state replay |
+| N07 | Source | GDN (Gated Differential Network) | R-46, §5.6 | état récurrent, rewind à `S⁽ʳ⁾` |
+| N08 | Source | Mamba / SSM | §5.6, R-9 | restauration d'état récurrent |
+| N09 | Source | MoE top-k + 1 partagé | R-37..R-41 | LRU d'experts, offload, calibrage par mesures |
+| N10 | Source | FreeToken | R-36 | chargement d'experts pendant la phase de calcul |
+| N11 | Source | CUDA (transferts DMA) | R-42, §4.4 | DMA, transferts pendant le calcul |
+| N12 | Source | WebGPU | §4.5, C-15 | limites, atomics, `f16`, mapping |
+| N13 | Source | OpenAI | R-48..R-50, Annexe B | endpoints, streaming, erreurs |
+| N14 | Source | Anthropic | R-80..R-82, Annexe B | endpoints, messages, streaming |
+| N15 | Source | NVFP4, MXFP4, FP4, FP8, INT4, INT8 | R-60, R-61 | formats prioritaires |
+| N16 | Source | GGML `q<N>` et i-quants | R-60, R-64 | formats et n-gram |
+| N17 | Source | DiffusionGemma (Google DeepMind) | R-12, §7.2, §7.3 | cible de référence dLLM |
+| N18 | Source | Clover (DiffuSpace) | R-37, R-46, R-9, §5.6, §7.2, §7.3 | cible de référence dLLM |
+| N19 | Adaptation | ordonnanceur de ressources séparé de l'ordonnanceur d'inférence | R-84..R-89, R-24, R-18, R-19, R-26 | architecture du moteur |
+| N20 | Adaptation | séparation des validateurs | §6.3, R-57 | interface, préconditions, granularité |
+| N21 | Adaptation | placement par rôle, pas par classe d'objet | R-29..R-31, R-33, R-34 | politique de placement |
+| N22 | Adaptation | mémoire polymorphe par rôle et budgets | §4.1, R-29, R-30 | couches de mémoire |
+| N23 | Adaptation | plan d'exécution à forme fixe | §4.4 | chemin WebGPU portable |
+| N24 | Adaptation | mode CPU complet | R-90, N-7, §4.6 | backend CPU |
+| N25 | Adaptation | sécurité de persistance | R-75..R-79 | interface, journalisation, validation |
+| N26 | Hypothèse de recherche | Δ du stride | R-22 | définition, conversion en positions entières, validation |
+| N27 | Hypothèse de recherche | prédiction de routage | R-40 | protocole de mesure, seuil d'abandon |
+| N28 | Hypothèse de recherche | τ et λ | R-25, R-27 | plage initiale [0.3, 0.6], λ > 0, mesure par cible |
+| N29 | Hypothèse de recherche | arrêt adaptatif | §5.8 | entropie moyenne sous un seuil + prédictions identiques sur 2 pas |
 
 ---
 
-## 15. Zones non spécifiées
+## 14. Zones non spécifiées
+
+Ces zones MUST être décidées par l'agent de développement avant d'implémenter : format de checkpoint canonique ; ABI Rust-Zig ; modèle de concurrence ; format des messages d'erreur de l'API ; granularité de la persistance ; clés d'admission exactes ; conventions de nommage des modules de kernels ; format des métadonnées canoniques.
 
 Le dépôt ne spécifie pas ces points ; l'agent MUST les signaler avant d'implémenter, MUST proposer une décision conforme aux invariants, MUST la faire valider.
 
-1. **Format de checkpoint canonique** (`R-58`) : nom, versioning, encodage, format d'en-tête, format de tables n-gram. Les exigences `R-59..R-64` contraignent le contenu, pas la syntaxe.
-2. **Contrats d'interface exacts entre couches** (`R-4`, §4.2) : signatures de fonctions, structures de buffers, conventions d'alignement, mécanisme d'ABI (Rust FFI vs Zig C ABI), format des métadonnées canoniques.
-3. **Modèle de concurrence** : threading Rust vs threads Zig, propriété des buffers, modèle de synchronisation avec les files de commandes WebGPU.
-4. **Multi-GPU et multi-device** : la fiche mentionne « multi-device, multi-layer, multi-session » comme axes de la mémoire hiérarchique, sans définir un modèle de distribution (NEVER étendre la sémantique de la mémoire à une distribution multi-machine sans décision explicite).
-5. **Support d'entrée multimodale (images)** : mentionné comme tension à résoudre dans la fiche de synergies, sans exigence fonctionnelle. Traiter comme non-objectif `N-4` jusqu'à décision.
-6. **Surface d'API exacte** (`R-48`) : version d'OpenAI, endpoints, schéma de tool calls, format de streaming.
-7. **Stratégie d'échantillonnage complète** : la fiche définit la validation de jetons, pas les politiques de temperature/top-p/top-k. MUST être décidé pour que la validation par logits de référence soit déterministe (`R-65`).
-8. **Plafond d'horizon K, taille de bloc B, nombre de pas S, taille de fenêtre W** : valeurs par défaut, plages recommandées, dépendance au checkpoint.
-9. **Seuil de tolérance de logits par format de poids** (`R-66`) : valeurs chiffrées à mesurer sur P3.
-10. **Politique de réallocation de VRAM** (`R-24`, `R-42`) : critère de réallocation, granularité, coût de la réallocation.
-11. **Plancher de capacité du pool d'experts** (`R-41`) : formule de la capacité d'un pas.
-12. **Prediction routing** (`R-40`) : horizon de prédiction, coût de la prédiction, politique de déclenchement du transfert.
-13. **Contrôles d'admission** (`R-34`) : critère d'admission pour une requête, une fenêtre de génération, un pool d'experts.
-14. **Format des mesures reproductibles** (`R-56`, §10) : format d'artefact, granularité, procédure de reproduction.
-15. **Convention de versioning du dépôt** : version de l'ABI, version des formats de poids, version des métadonnées canoniques, règle de compatibilité.
+1. **Format de checkpoint canonique** (R-58) : nom, versioning, encodage, en-tête, tables n-gram.
+2. **ABI Rust ↔ Zig** (I-12, §4.7) : signatures, limites de types, conventions d'erreurs, modes d'appels, transferts de buffers, formats de sérialisation, règles d'alignement.
+3. **Modèle de concurrence** : threading Rust vs threads Zig, propriété des buffers, synchronisation avec les files de commandes WebGPU.
+4. **Multi-GPU et multi-device** : `N-9` (hors périmètre). La mémoire polymorphe est mono-device ; NEVER étendre la sémantique à une distribution multi-machine sans décision explicite.
+5. **Support d'entrée multimodale (images)** : `N-4` jusqu'à décision.
+6. **Surface d'API exacte** (R-48, R-80, Annexe B) : versions d'API, endpoints, schémas de tool calls, format de streaming.
+7. **Stratégie d'échantillonnage complète** (R-65) : temperature / top-p / top-k, afin que la validation par logits de référence soit déterministe.
+8. **Plafond d'horizon K, taille de bloc B, nombre de pas S, taille de fenêtre W** : valeurs par défaut, plages, dépendance au checkpoint.
+9. **Seuil de tolérance de logits par format de poids** (R-66) : valeurs chiffrées à mesurer sur P1.
+10. **Politique de réallocation de VRAM** (R-24, R-87, R-42) : critère, granularité, coût.
+11. **Plancher de capacité du pool d'experts** (R-41) : formule de la capacité d'un pas.
+12. **Prediction routing** (R-40) : horizon de prédiction, coût, politique de déclenchement.
+13. **Contrôles d'admission** (R-34) : critère d'admission pour une requête, une fenêtre, un pool d'experts.
+14. **Format des mesures reproductibles** (§9) : format d'artefact, granularité, procédure de reproduction.
+15. **Convention de versioning** : version de l'ABI, des formats de poids, des métadonnées canoniques, règle de compatibilité.
+16. **Durée de rétention de la persistance** (R-76) et **procédure de suppression** des sessions.
+17. **Chiffrement au repos** (R-79) : mécanisme retenu et avertissement.
+18. **Interfaces de sécurité** (R-77) : clé d'API, emplacements autorisés, permissions des fichiers.
+19. **Matrice d'équivalence numérique** (§6.3) : tolérances chiffrées par format de poids.
+20. **Mode CPU complet** (R-90) : granularité des kernels CPU, formats de poids supportés, formes de workgroups.
 
 ---
 
-## 16. Structure de dépôt imposée
+## 15. Structure de dépôt imposée
 
-La structure MUST refléter les zones de responsabilité des couches (règle §12.9, I-6).
+La structure MUST refléter les zones de responsabilité des couches.
 
 ```
 Alethe.IA/
   _Alethe.IA.md          # ce document — source unique
   docs/fiches_techniques/
-  core/                  # Rust : état, ordonnanceur, plans, admission, validation, formats, API
+  core/                  # Rust : état, ordonnanceur d'inférence, plans, admission, validation, formats
+  resources/             # Rust : ordonnanceur de ressources, budgets, coût de transfert
   mem/                   # Zig : layouts, indexation, pools, décodage de poids, staging, ABI
   gpu/                   # WGSL : kernels, plans d'exécution, découverte des limites
-  cli/                   # Rust : REPL, invocations non-interactive, sortie JSON
-  serve/                 # Rust : API OpenAI-compatible, file de workers, streaming, tool calls
-  persist/               # Rust + Zig : checkpoints d'états, sessions, radix cache
+  cpu/                   # Zig : kernels CPU, offload, mode CPU-only
+  cli/                   # Rust : CLI, invocations non-interactive, sortie JSON
+  serve/                 # Rust : API OpenAI, API Anthropic, file de workers, streaming, tool calls
+  persist/               # Rust + Zig : checkpoints d'états, sessions, radix cache, rétention, permissions
   tests/                 # unitaires, régression de capacités, mesures, validation de logits
 ```
 
 Règles de structure :
 - NEVER placer de la représentation mémoire dans `core/` ; NEVER placer de la décision d'ordonnancement dans `mem/`.
 - NEVER placer de la sémantique GPU dans `core/` : `core/` consomme les limites du device, ne les invente pas.
+- NEVER placer de décision de placement dans `core/` sans passer par l'interface typée de l'ordonnanceur de ressources.
 - `tests/` MUST être organisé par jalon, chaque test pointant une exigence par son ID.
 
-## 17. Matrice de traçabilité exigences → jalons
+---
+
+## 16. Matrice de traçabilité exigences → jalons
 
 | Jalon | Exigences couvertes |
 |---|---|
-| P0 | R-1, R-4, R-34, §4.4, C-11 |
-| P1 | R-29..R-38, R-41, R-42, R-24, R-34 |
-| P2 | R-2..R-6, R-7..R-11, R-16, R-18..R-27, R-12 |
-| P3 | R-15, R-17, R-52, R-53, R-65, R-66 |
-| P4 | R-13, R-14, R-46, §5.4, §5.5, §5.6 |
-| P5 | R-43..R-51, R-55, R-67..R-70 |
-| P6 | R-58..R-64, R-71..R-74 |
+| P0 | R-1, R-4, R-34, R-58..R-64, R-83, R-85, R-86, R-90, §4.5, C-15 |
+| P1 | R-2..R-6, R-7..R-11, R-12, R-16, R-25, R-26, R-28, R-29..R-35, R-41, R-42, R-84..R-89, R-18 |
+| P2 | R-19..R-24, R-27, R-36..R-40, R-87, R-89, R-37 |
+| P3 | R-15, R-17, R-37..R-41, R-46, R-52..R-57, R-65..R-68, §5.5, §5.6, §6.3 |
+| P4 | R-48..R-51, R-80..R-82, Annexe B |
+| P5 | R-43..R-47, R-75..R-79, R-67..R-69, R-64 |
+| FUTURE (hors moteur) | R-71..R-74 |
 
 Un jalon MUST NOT être déclaré complété si une exigence de sa ligne n'est pas exercée par un test ou une mesure.
 
 ---
 
-## 18. Critères d'acceptation globale
+## 17. Critères d'acceptation globale
 
-1. Le moteur sert un dLLM natif, un checkpoint bilingue (deux chemins), un checkpoint adapté, un checkpoint AR — **par le même cycle de blocs** (I-1, R-15).
-2. Les décisions d'horizon, de fenêtre, de commit, de réallocation viennent d'**un seul ordonnanceur** (I-2, R-24).
-3. KV, états récurrents, états de blocs, poids et tables n-gram vivent dans **une seule hiérarchie de placement** (I-3, R-29).
-4. La validation de sortie, de couches, de jetons, de structures suit **un seul mécanisme de référence** (I-4, R-52..R-57).
-5. Les formats de poids et de checkpoint conservent la sémantique des checkpoints (I-5, R-59).
-6. Les responsabilités Rust/Zig/WebGPU sont délimitées par des contrats, sans hiérarchie artificielle ni duplication (I-6, I-7).
-7. Le moteur s'adapte aux capacités du device WebGPU, sans lock-in (I-8, R-34, C-8).
-8. Les dégradations sont explicites (R-34, §2.2, N-5).
-9. Chaque optimisation est justifiée par des mesures explicites (§10).
-10. Les limitations de capacités sont explicites ; un mode de dégradation est déclaré par un mécanisme de contrôle d'admission (R-34).
-11. La structure du dépôt reflète les zones de responsabilité des couches (§16).
-12. Le code base reste compact, avec interfaces étroites et commentaires instructifs à côté de l'implémentation (C-1..C-15).
+1. Le moteur sert un dLLM natif, un checkpoint **dual-stream** (deux chemins), un checkpoint adapté, un checkpoint AR — par le même contrat d'exécution typé par famille (`I-1`, `N-11`).
+2. Les décisions d'horizon, de fenêtre, de commit, de réallocation viennent de deux ordonnanceurs séparés (I-2, R-84..R-89, R-18).
+3. KV, états récurrents, états de blocs, poids et tables n-gram vivent dans une seule hiérarchie de placement par rôle (I-3, R-29, R-30).
+4. La validation de sortie, de couches, de jetons, de structures suit un seul mécanisme de référence, avec des validateurs typés (§6.3).
+5. Les formats de poids et de checkpoint conservent la sémantique des checkpoints (I-5, R-59, C-9).
+6. Les responsabilités Rust / Zig / WebGPU / CPU sont délimitées par des contrats (I-6, I-7, I-12).
+7. Le moteur s'adapte aux capacités du device WebGPU, sans lock-in (I-8, R-34, C-8, R-86).
+8. Les dégradations sont explicites (R-34, §9, N-5) ; les fonctionnalités non prises en charge sont documentées.
+9. Chaque optimisation est justifiée par des mesures explicites (§9).
+10. La structure du dépôt reflète les zones de responsabilité des couches (§15).
+11. Le code base est compact, avec interfaces étroites (C-1..C-15).
+12. Les interfaces d'API sont documentées par une matrice de compatibilité, y compris les fonctionnalités non prises en charge (Annexe B, R-81).
+13. La persistance est explicite, bornée, supprimable, journalisée et sécurisée (R-75..R-79, §6.4).
+14. Les exigences de recherche sont mesurées par un protocole et un seuil d'abandon (Annexe A, R-40, R-22).
+15. Les cibles de référence sont nommées, leurs preconditions sont déclarées, leur état de support est publié (§7.2, §7.3).
+16. Le mode CPU complet est un mode normal de production (I-11, R-90, N-7).
+17. La conversion de checkpoints est un outillage externe (I-9, N-1, R-71..R-74 FUTURE).
+
+---
+
+## Annexe A — Niveaux de maturité
+
+| Niveau | Usage | Preuve |
+|---|---|---|
+| **STABLE** | production | test, mesure, interface validée |
+| **EXPERIMENTAL** | chemin de production à valider | prototype fonctionnel, mesure sur la cible |
+| **RESEARCH** | hypothèse à prouver | protocole de mesure, seuil d'abandon, journal de gains |
+| **FUTURE** | intention non implémentée | justification, critère d'entrée en périmètre |
+
+| `Nature` | Usage |
+|---|---|
+| **Source** | equation, politique, protocole, format, API, nom ou limite reproduits depuis la source |
+| **Adaptation** | adaptation d'une source aux structures d'Alethe.ia |
+| **Hypothèse de recherche** | politique, seuil, plage, heuristique ou prédiction proposée par Alethe.ia, à valider |
+
+---
+
+## Annexe B — Matrice de compatibilité des APIs
+
+| Endpoint | OpenAI | Anthropic |
+|---|---|---|
+| `/v1/chat/completions` | | `/v1/messages` |
+| streaming SSE | | |
+| tool calls / tool use | | |
+| `system` / `system` blocks | | |
+| `stop_reason` / `finish_reason` | | |
+| format d'erreurs | | |
+| contenus multimodaux | | |
+| champs acceptés, refusés, non pris en charge | | |
+
+MUST la remplir et la tester par endpoint (R-81, R-82).
+
+---
+
+## Annexe C — Correspondance des sections
+
+La baseline auditée (`docs/audit/audit_Alethe.md`) se lit contre la version antérieure de ce document. Correspondance : formats de poids (§6 de la baseline) → §3.9 ; validation & QA (§7) → §6 ; écosystème (§8) → §7 ; jalons (§9) → §8 ; métriques (§10) → §9 ; conventions (§11) → §10 ; interface agent (§12) → §11 ; non-objectifs (§13) → §12 ; index des références (§14) → §13.1 ; zones non spécifiées (§15) → §14 ; structure de dépôt (§16) → §15 ; matrice jalons (§17) → §16 ; critères globaux (§18) → §17. **Les IDs d'exigences `R-1..R-74` sont conservés** ; les ajouts sont `R-75..R-90`.
+
+---
+
+## 19. Changement de périmètre du projet
+
+Alethe.ia est un moteur **local**, pour des utilisateurs avertis, servant des modèles à la demande. **Ne pas convertir, ne pas entraîner.** Ne pas promettre un remplacement de vLLM, SGLang, Llama.cpp, Ollama.
+
+**Produit** : un moteur de génération d'inférence pour utilisateurs avertis, servant des modèles à la demande, avec une mémoire polymorphe par rôle.
+
+- **P0** — architecture d'exécution, limites mesurées, formats prioritaires, références numériques, mode CPU complet, ordonnanceurs
+- **P1** — un dLLM de référence exécuté, mémoire, admission, transfert
+- **P2** — ordonnanceurs complets, offload, LRU d'experts, instrumentation
+- **P3** — AR natif + Clover, GDN, MoE, self-speculation, validation
+- **P4** — APIs OpenAI et Anthropic, streaming, tool calls, matrice Annexe B
+- **P5** — persistance NVMe, reprise de session, sécurité, formats étendus, QA complète
+- **FUTURE** — outillage de conversion AR → dLLM (R-71..R-74), interface graphique, multi-GPU, WASM
